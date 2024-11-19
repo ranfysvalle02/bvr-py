@@ -76,32 +76,6 @@ From each cluster, the chunk closest to the centroid (central point) is selected
 selected_chunks = [chunks[idx] for idx in closest_indices]
 ```
 
-## Installation and Requirements
-
-Ensure you have the following installed:
-
-- Python 3.x
-- Required Python packages:
-  - `numpy`
-  - `faiss-cpu` (for FAISS integration)
-  - `nltk`
-  - `scikit-learn`
-  - `urllib3`
-- NLTK data (`punkt` tokenizer)
-
-Install the Python packages using pip:
-
-```bash
-pip3 install numpy faiss-cpu nltk scikit-learn urllib3
-```
-
-Download NLTK data:
-
-```python
-import nltk
-nltk.download('punkt')
-```
-
 ## Code Explanation
 
 ### Initialization
