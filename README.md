@@ -1,4 +1,4 @@
-# bvr-py
+# critical-vectors
 
 ---
 
