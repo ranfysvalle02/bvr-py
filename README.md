@@ -129,12 +129,10 @@ selector = CriticalVectors(
 
 ### Downloading Content
 
-The `download_raw_content` method fetches text data from a given URL.
+The `demo_string` method fetches text data from a demo URL.
 
 ```python
-test_str = download_raw_content(
-    "https://raw.githubusercontent.com/yourusername/yourrepository/main/README.md"
-)
+test_str = demo_string()
 ```
 
 ### Splitting Text
