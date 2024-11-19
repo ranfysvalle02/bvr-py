@@ -27,6 +27,8 @@ In this blog post, we'll delve into how CriticalVectors works, its features, and
 - **Automatic Cluster Determination**: Automatically determine the optimal number of clusters based on the data.
 - **FAISS Integration**: Optionally use Facebook's FAISS library for efficient clustering on large datasets.
 
+You can choose whether to use FAISS by setting the `use_faiss` parameter during initialization. If `use_faiss` is set to `True`, FAISS will be used for clustering. If it's set to `False`, scikit-learn's implementations of the clustering algorithms will be used instead.
+
 ## Lost in the Middle
 
 - **Context Preservation**: While the tool can identify and extract the most representative chunks of text, it might not always preserve the overall narrative or context
