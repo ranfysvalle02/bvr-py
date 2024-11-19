@@ -4,14 +4,13 @@
 
 # Extracting Relevant Text Chunks Using Embeddings and Clustering
 
-##  extract the most relevant or representative parts from large volumes of text
 ---
 
 ## Introduction
 
 When dealing with large volumes of text, it's often necessary to extract the most relevant or representative parts for tasks like summarization, topic modeling, or information retrieval. Manually sifting through extensive text can be time-consuming and impractical. To address this challenge, we introduce **CriticalVectors**, a Python class that automates the selection of significant text chunks using embeddings and clustering algorithms.
 
-This tool leverages the power of natural language processing (NLP) and machine learning to:
+This tool leverages the power of natural language processing (NLP) and machine learning to extract the most relevant or representative parts from large volumes of text. Here is how it works:
 
 - Split text into manageable chunks.
 - Compute embeddings for each chunk to capture semantic meaning.
