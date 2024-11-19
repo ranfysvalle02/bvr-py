@@ -543,7 +543,25 @@ labels = clustering.fit_predict(embeddings)
 
 ---
 
-## Appendix:
+## Appendix: Understanding Key Parameters
+
+1. **`max_tokens_per_chunk`**: This parameter sets the maximum number of words, or tokens, that each chunk of text can contain. For instance, if it's set to 100, each chunk will contain up to 100 words. This is particularly important when working with models that have a limit on the number of words they can process at once.
+
+2. **`num_clusters`**: This parameter determines the number of groups, or clusters, into which the chunks of text will be divided during the clustering step. If it's set to 'auto', the number of clusters is calculated automatically based on the number of chunks. The more clusters there are, the more representative chunks will be selected, providing a broader overview of the text.
+
+3. **`chunk_size`**: This parameter sets the maximum size of each chunk in characters when the text is split into paragraphs. For example, if it's set to 1000, each chunk will contain up to 1000 characters. This is useful when you want to control the size of the chunks based on character count rather than word count.
+
+4. **`split_method`**: This parameter determines how the text is divided into chunks. If it's set to 'sentences', the text is split into sentences and then chunks are formed based on `max_tokens_per_chunk`. If it's set to 'paragraphs', the text is split into paragraphs and then chunks are formed based on `chunk_size`.
+
+### How New Chunks Are Created
+
+Depending on the `split_method` chosen, the process of creating new chunks varies:
+
+- If `split_method` is set to 'sentences', the text is first split into individual sentences. These sentences are then grouped into chunks. Once the addition of another sentence would cause a chunk to exceed the `max_tokens_per_chunk` limit, that chunk is completed, and a new chunk is started.
+
+- If `split_method` is set to 'paragraphs', the text is first split into individual paragraphs. These paragraphs are then grouped into chunks. Once the addition of another paragraph would cause a chunk to exceed the `chunk_size` limit, that chunk is completed, and a new chunk is started.
+
+By understanding and appropriately setting these parameters, you can effectively control the granularity and representativeness of the text chunks extracted by the `CriticalVectors` class.
 
 ### `max_tokens_per_chunk`
 
