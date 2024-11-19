@@ -27,6 +27,10 @@ In this blog post, we'll delve into how CriticalVectors works, its features, and
 - **Automatic Cluster Determination**: Automatically determine the optimal number of clusters based on the data.
 - **FAISS Integration**: Optionally use Facebook's FAISS library for efficient clustering on large datasets.
 
+## Lost in the Middle
+
+- **Context Preservation**: While the tool can identify and extract the most representative chunks of text, it might not always preserve the overall narrative or context
+  
 ## How It Works
 
 ### 1. Text Splitting
@@ -412,46 +416,10 @@ if __name__ == "__main__":
         relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
         print(first_part)
         print("======================")
-        print("Selected Chunks:")
         for chunk in relevant_chunks:
             print(chunk)
         # Print the last part
         print("======================")
-        print(last_part)
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-```
-
-### Example Script
-
-```python
-if __name__ == "__main__":
-    # Instantiate the selector
-    try:
-        selector = CriticalVectors(
-            strategy='kmeans',
-            num_clusters='auto',
-            chunk_size=1000,
-            split_method='sentences',
-            max_tokens_per_chunk=100,  # Adjust as needed
-            use_faiss=True  # Enable FAISS
-        )
-        # Download content from a URL
-        test_str = selector.download_raw_content(
-            "https://raw.githubusercontent.com/yourusername/yourrepository/main/README.md"
-        )
-        # Get the most relevant chunks
-        relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
-        print("First Part:")
-        print(first_part)
-        print("======================")
-        print("Selected Chunks:")
-        for chunk in relevant_chunks:
-            print(chunk)
-            print("----------------------")
-        print("======================")
-        print("Last Part:")
         print(last_part)
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -466,7 +434,6 @@ First Part:
 Introduction text from the README...
 
 ======================
-Selected Chunks:
 [Chunk 1]
 ----------------------
 [Chunk 2]
