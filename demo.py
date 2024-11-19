@@ -1,12 +1,23 @@
 import numpy as np
 import faiss
 from langchain_ollama import OllamaEmbeddings
-import urllib.request
-import urllib.error
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
+import requests
+def demo_string():
+    url = f"https://en.wikipedia.org/wiki/Puerto_Rico"
+    # Tokens: 218430
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
+        print("Tokens:", len(word_tokenize(response.text)))
+        return response.text
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error occurred: {http_err}")
+    except Exception as err:
+        print(f"An error occurred: {err}")
 
-
+# Define the CriticalVectors class
 class CriticalVectors:
     """
     A robust class to select the most relevant chunks from a text using various strategies,
@@ -63,17 +74,7 @@ class CriticalVectors:
         # Set FAISS usage
         self.use_faiss = use_faiss
 
-    def download_raw_content(self, url=''):
-        if url == '':
-            return "unavailable"
-        try:
-            with urllib.request.urlopen(url) as response:
-                data = response.read().decode()
-            return data
-        except urllib.error.HTTPError:
-            return "unavailable"
-        except Exception as e:
-            return f"An error occurred: {str(e)}"
+    
 
     def split_text(self, text, method='sentences', max_tokens_per_chunk=512):
         """
@@ -306,12 +307,11 @@ if __name__ == "__main__":
             max_tokens_per_chunk=100,  # Adjust as needed
             use_faiss=True  # Enable FAISS
         )
-        test_str = selector.download_raw_content("https://raw.githubusercontent.com/ranfysvalle02/vanilla-agents/refs/heads/main/README.md")
+        test_str = demo_string()
         # Get the most relevant chunks using the improved method
         relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
         print(first_part)
         print("======================")
-        print("Selected Chunks:")
         for chunk in relevant_chunks:
             print(chunk)
         # Print the last part
