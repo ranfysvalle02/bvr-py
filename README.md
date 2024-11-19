@@ -19,7 +19,7 @@ This tool leverages the power of natural language processing (NLP) and machine l
 - Cluster the embeddings to identify groups of similar chunks.
 - Select representative chunks from each cluster.
 
-In this blog post, we'll delve into how CriticalVectors works, its features, and how you can use it in your projects.
+From each cluster, the chunk whose embedding is closest to the centroid (the central point) of that cluster is selected. This chunk is considered the most representative of its cluster. So, if you have N clusters, you will end up with N representative chunks.
 
 ## Key Features
 
