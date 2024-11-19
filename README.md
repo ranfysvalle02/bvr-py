@@ -238,6 +238,22 @@ In summary, semantic extraction and hierarchical clustering serve different purp
 - **Information Retrieval**: Quickly retrieve relevant information from large texts.
 - **Preprocessing for NLP Tasks**: Prepare data by selecting significant parts.
 
+## Limitations
+
+1. **Context Preservation**: As mentioned earlier, CriticalVectors might not always preserve the overall narrative or context of the text. This is because it selects individual chunks based on their semantic similarity, which might not align with the original order or flow of the text.
+
+2. **Dependence on Embeddings**: The quality of the extracted chunks heavily depends on the quality of the embeddings used. If the embeddings do not capture the semantic meaning of the text well, the selected chunks might not be truly representative.
+
+3. **Computational Resources**: CriticalVectors can be computationally intensive, especially when dealing with large volumes of text and high-dimensional embeddings. This might limit its usability in resource-constrained environments.
+
+4. **Parameter Tuning**: The performance of CriticalVectors can be sensitive to the choice of parameters like `num_clusters`, `max_tokens_per_chunk`, and `chunk_size`. Finding the right set of parameters might require some experimentation and tuning.
+
+5. **Language Support**: The current implementation of CriticalVectors uses the `OllamaEmbeddings` model and NLTK's sentence tokenizer, which might not support all languages. For languages other than English, additional preprocessing and a different embeddings model might be needed.
+
+6. **FAISS Limitations**: While FAISS provides efficient clustering for large datasets, it only supports Euclidean distance and inner product similarity. This might limit its effectiveness for certain types of data or use cases.
+
+7. **Hierarchical Clustering**: Hierarchical clustering can be computationally expensive for large datasets. Also, the dendrogram produced by hierarchical clustering might not always be easy to interpret, especially for large numbers of clusters.
+
 ---
 
 ## Appendix: Understanding Key Parameters
