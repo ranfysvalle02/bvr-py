@@ -111,6 +111,17 @@ import urllib.error
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 
+def download_raw_content(url=''):
+    if url == '':
+        return "unavailable"
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = response.read().decode()
+        return data
+    except urllib.error.HTTPError:
+        return "unavailable"
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
 class CriticalVectors:
     """
@@ -168,17 +179,7 @@ class CriticalVectors:
         # Set FAISS usage
         self.use_faiss = use_faiss
 
-    def download_raw_content(self, url=''):
-        if url == '':
-            return "unavailable"
-        try:
-            with urllib.request.urlopen(url) as response:
-                data = response.read().decode()
-            return data
-        except urllib.error.HTTPError:
-            return "unavailable"
-        except Exception as e:
-            return f"An error occurred: {str(e)}"
+    
 
     def split_text(self, text, method='sentences', max_tokens_per_chunk=512):
         """
@@ -411,7 +412,7 @@ if __name__ == "__main__":
             max_tokens_per_chunk=100,  # Adjust as needed
             use_faiss=True  # Enable FAISS
         )
-        test_str = selector.download_raw_content("https://raw.githubusercontent.com/ranfysvalle02/vanilla-agents/refs/heads/main/README.md")
+        test_str = download_raw_content("https://raw.githubusercontent.com/ranfysvalle02/vanilla-agents/refs/heads/main/README.md")
         # Get the most relevant chunks using the improved method
         relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
         print(first_part)
@@ -423,6 +424,7 @@ if __name__ == "__main__":
         print(last_part)
     except Exception as e:
         print(f"An error occurred: {e}")
+
 ```
 
 ### Output
@@ -475,7 +477,7 @@ selector = CriticalVectors(
 The `download_raw_content` method fetches text data from a given URL.
 
 ```python
-test_str = selector.download_raw_content(
+test_str = download_raw_content(
     "https://raw.githubusercontent.com/yourusername/yourrepository/main/README.md"
 )
 ```
