@@ -106,12 +106,11 @@ import urllib.request
 import urllib.error
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
-from sklearn.cluster import KMeans, AgglomerativeClustering
-from sklearn.metrics import pairwise_distances_argmin_min
+
 
 class CriticalVectors:
     """
-    A robust class to select the most relevant chunks from a text using various strategies.
+    A robust class to select the most relevant chunks from a text using various strategies,
     """
 
     def __init__(
@@ -124,6 +123,18 @@ class CriticalVectors:
         max_tokens_per_chunk=512,
         use_faiss=False
     ):
+        """
+        Initializes CriticalVectors.
+
+        Parameters:
+        - chunk_size (int): Size of each text chunk in characters.
+        - strategy (str): Strategy to use for selecting chunks ('kmeans', 'agglomerative').
+        - num_clusters (int or 'auto'): Number of clusters (used in clustering strategies). If 'auto', automatically determine the number of clusters.
+        - embeddings_model: Embedding model to use. If None, uses OllamaEmbeddings with 'nomic-embed-text' model.
+        - split_method (str): Method to split text ('sentences', 'paragraphs').
+        - max_tokens_per_chunk (int): Maximum number of tokens per chunk when splitting.
+        - use_faiss (bool): Whether to use FAISS for clustering.
+        """
         # Validate chunk_size
         if not isinstance(chunk_size, int) or chunk_size <= 0:
             raise ValueError("chunk_size must be a positive integer.")
@@ -166,6 +177,17 @@ class CriticalVectors:
             return f"An error occurred: {str(e)}"
 
     def split_text(self, text, method='sentences', max_tokens_per_chunk=512):
+        """
+        Splits the text into chunks based on the specified method.
+
+        Parameters:
+        - text (str): The input text to split.
+        - method (str): Method to split text ('sentences', 'paragraphs').
+        - max_tokens_per_chunk (int): Maximum number of tokens per chunk.
+
+        Returns:
+        - List[str]: A list of text chunks.
+        """
         # Validate text
         if not isinstance(text, str) or len(text.strip()) == 0:
             raise ValueError("text must be a non-empty string.")
@@ -206,6 +228,15 @@ class CriticalVectors:
             raise ValueError("Invalid method for splitting text.")
 
     def compute_embeddings(self, chunks):
+        """
+        Computes embeddings for each chunk.
+
+        Parameters:
+        - chunks (List[str]): List of text chunks.
+
+        Returns:
+        - np.ndarray: Embeddings of the chunks.
+        """
         # Validate chunks
         if not isinstance(chunks, list) or not chunks:
             raise ValueError("chunks must be a non-empty list of strings.")
@@ -218,6 +249,16 @@ class CriticalVectors:
             raise RuntimeError(f"Error computing embeddings: {e}")
 
     def select_chunks(self, chunks, embeddings):
+        """
+        Selects the most relevant chunks based on the specified strategy.
+
+        Parameters:
+        - chunks (List[str]): List of text chunks.
+        - embeddings (np.ndarray): Embeddings of the chunks.
+
+        Returns:
+        - List[str]: Selected chunks.
+        """
         num_chunks = len(chunks)
         num_clusters = self.num_clusters
 
@@ -236,6 +277,17 @@ class CriticalVectors:
             raise ValueError(f"Unknown strategy: {self.strategy}")
 
     def _select_chunks_kmeans(self, chunks, embeddings, num_clusters):
+        """
+        Selects chunks using KMeans clustering.
+
+        Parameters:
+        - chunks (List[str]): List of text chunks.
+        - embeddings (np.ndarray): Embeddings of the chunks.
+        - num_clusters (int): Number of clusters.
+
+        Returns:
+        - List[str]: Selected chunks.
+        """
         if self.use_faiss:
             try:
                 d = embeddings.shape[1]
@@ -247,6 +299,7 @@ class CriticalVectors:
                 raise RuntimeError(f"Error in FAISS KMeans clustering: {e}")
         else:
             try:
+                from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=num_clusters, random_state=1337)
                 kmeans.fit(embeddings)
                 labels = kmeans.labels_
@@ -262,6 +315,7 @@ class CriticalVectors:
                 D, closest_indices = index.search(centroids, 1)
                 closest_indices = closest_indices.flatten()
             else:
+                from sklearn.metrics import pairwise_distances_argmin_min
                 closest_indices, _ = pairwise_distances_argmin_min(kmeans.cluster_centers_, embeddings)
             selected_chunks = [chunks[idx] for idx in closest_indices]
             return selected_chunks
@@ -269,7 +323,19 @@ class CriticalVectors:
             raise RuntimeError(f"Error selecting chunks: {e}")
 
     def _select_chunks_agglomerative(self, chunks, embeddings, num_clusters):
+        """
+        Selects chunks using Agglomerative Clustering.
+
+        Parameters:
+        - chunks (List[str]): List of text chunks.
+        - embeddings (np.ndarray): Embeddings of the chunks.
+        - num_clusters (int): Number of clusters.
+
+        Returns:
+        - List[str]: Selected chunks.
+        """
         try:
+            from sklearn.cluster import AgglomerativeClustering
             clustering = AgglomerativeClustering(n_clusters=num_clusters)
             labels = clustering.fit_predict(embeddings)
         except Exception as e:
@@ -287,6 +353,7 @@ class CriticalVectors:
                 D, I = index.search(centroid, 1)
                 closest_index_in_cluster = I[0][0]
             else:
+                from sklearn.metrics import pairwise_distances_argmin_min
                 closest_index_in_cluster, _ = pairwise_distances_argmin_min(centroid, cluster_embeddings)
                 closest_index_in_cluster = closest_index_in_cluster[0]
             selected_indices.append(cluster_indices[closest_index_in_cluster])
@@ -295,6 +362,15 @@ class CriticalVectors:
         return selected_chunks
 
     def get_relevant_chunks(self, text):
+        """
+        Gets the most relevant chunks from the text.
+
+        Parameters:
+        - text (str): The input text.
+
+        Returns:
+        - List[str]: Selected chunks.
+        """
         # Split the text into chunks
         chunks = self.split_text(
             text,
@@ -305,9 +381,9 @@ class CriticalVectors:
         if not chunks:
             return [], '', ''
 
-        # First part
+        # first part
         first_part = chunks[0]
-        # Last part
+        # last part
         last_part = chunks[-1]
 
         # Compute embeddings for each chunk
@@ -316,6 +392,35 @@ class CriticalVectors:
         # Select the most relevant chunks
         selected_chunks = self.select_chunks(chunks, embeddings)
         return selected_chunks, first_part, last_part
+
+# Example usage:
+
+if __name__ == "__main__":
+
+    # Instantiate the selector
+    try:
+        selector = CriticalVectors(
+            strategy='kmeans',
+            num_clusters='auto',
+            chunk_size=1000,
+            split_method='sentences',
+            max_tokens_per_chunk=100,  # Adjust as needed
+            use_faiss=True  # Enable FAISS
+        )
+        test_str = selector.download_raw_content("https://raw.githubusercontent.com/ranfysvalle02/vanilla-agents/refs/heads/main/README.md")
+        # Get the most relevant chunks using the improved method
+        relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
+        print(first_part)
+        print("======================")
+        print("Selected Chunks:")
+        for chunk in relevant_chunks:
+            print(chunk)
+        # Print the last part
+        print("======================")
+        print(last_part)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 ```
 
 ### Example Script
