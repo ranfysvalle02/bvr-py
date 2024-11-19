@@ -4,6 +4,11 @@ from langchain_ollama import OllamaEmbeddings
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 import requests
+
+# demo setup
+import ollama
+desiredModel = 'llama3.2:3b'
+
 def demo_string():
     url = f"https://en.wikipedia.org/wiki/Puerto_Rico"
     # Tokens: 218430
@@ -317,5 +322,14 @@ if __name__ == "__main__":
         # Print the last part
         print("======================")
         print(last_part)
+        res = ollama.chat(model=desiredModel, messages=[
+            {
+                'role': 'user',
+                'content': "[INST]<<SYS>>" + "RESPOND WITH A SHORT SUMMARY OF THE [context]" + "\n\n\[context] beginning:\n{first_part} \n" + "\n".join(relevant_chunks) + "\n\nlast part:\n{last_part}\n[/context]<</SYS>>[/INST]",
+            },
+        ])
+        if res['message']:
+            print(res['message'])
+            exit()
     except Exception as e:
         print(f"An error occurred: {e}")
