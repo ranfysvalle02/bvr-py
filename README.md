@@ -633,3 +633,171 @@ selector = CriticalVectors(
 - The `num_clusters` parameter affects how many chunks will be selected as the most relevant.
 
 ---
+
+## **Visualization of the CriticalVectors Workflow**
+
+### **1. Initialization**
+
+- **CriticalVectors Instance Creation**
+  - **Parameters Set**:
+    - `chunk_size`
+    - `strategy` (`'kmeans'` or `'agglomerative'`)
+    - `num_clusters` (integer or `'auto'`)
+    - `embeddings_model` (default is `OllamaEmbeddings`)
+    - `split_method` (`'sentences'` or `'paragraphs'`)
+    - `max_tokens_per_chunk`
+    - `use_faiss` (boolean)
+  - **Purpose**: Configures the settings for how text will be processed.
+
+---
+
+### **2. Text Acquisition**
+
+- **Download Raw Content**
+  - **Function**: `download_raw_content(url)`
+  - **Process**:
+    - Fetches text data from the specified URL.
+    - Handles exceptions and errors (e.g., HTTP errors).
+  - **Outcome**: Raw text data ready for processing.
+
+---
+
+### **3. Text Splitting**
+
+- **Split Text into Chunks**
+  - **Method**: `split_text(text, method, max_tokens_per_chunk)`
+  - **Options**:
+    - **Sentences**:
+      - Uses NLTK's sentence tokenizer.
+      - Groups sentences into chunks without exceeding `max_tokens_per_chunk`.
+    - **Paragraphs**:
+      - Splits text based on double newline characters (`'\n\n'`).
+  - **Process Flow**:
+    1. **Tokenization**: Break text into smaller units (sentences or paragraphs).
+    2. **Chunking**: Aggregate tokens into chunks based on size constraints.
+  - **Outcome**: A list of text chunks for further processing.
+
+---
+
+### **4. Embedding Computation**
+
+- **Compute Embeddings for Chunks**
+  - **Method**: `compute_embeddings(chunks)`
+  - **Process**:
+    - Converts text chunks into numerical vectors (embeddings).
+    - Uses the specified embeddings model (default: `OllamaEmbeddings` with `'nomic-embed-text'`).
+    - Ensures embeddings are in `float32` format (required for FAISS).
+  - **Outcome**: An array of embeddings representing each chunk in vector space.
+
+---
+
+### **5. Chunk Selection via Clustering**
+
+- **Select Relevant Chunks**
+  - **Method**: `select_chunks(chunks, embeddings)`
+  - **Strategies**:
+    - **KMeans Clustering** (`_select_chunks_kmeans`)
+      - Clusters embeddings into `num_clusters`.
+      - Uses FAISS or Scikit-learn's KMeans.
+      - Selects the chunk closest to each cluster centroid.
+    - **Agglomerative Clustering** (`_select_chunks_agglomerative`)
+      - Performs hierarchical clustering to group similar chunks.
+      - Computes centroids and selects closest chunks.
+  - **Automatic Cluster Determination**:
+    - If `num_clusters` is `'auto'`, calculates it based on the number of chunks.
+  - **Outcome**: A list of the most relevant chunks extracted from the text.
+
+---
+
+### **6. Output Generation**
+
+- **Retrieve Relevant Chunks**
+  - **Method**: `get_relevant_chunks(text)`
+  - **Process**:
+    - Calls `split_text`, `compute_embeddings`, and `select_chunks` in sequence.
+    - Also extracts the first and last parts of the text.
+  - **Outputs**:
+    - `selected_chunks`: The most relevant chunks identified.
+    - `first_part`: The initial chunk of the text.
+    - `last_part`: The final chunk of the text.
+
+---
+
+### **7. Example Usage Flow**
+
+1. **Instantiate CriticalVectors**
+   - Configured with desired parameters (e.g., `strategy='kmeans'`, `use_faiss=True`).
+2. **Download Text**
+   - Retrieves text from a URL (e.g., a GitHub README file).
+3. **Process Text**
+   - Calls `get_relevant_chunks` to process and extract relevant chunks.
+4. **Display Results**
+   - Prints the first part, relevant chunks, and the last part of the text.
+
+---
+
+### **Flowchart Representation**
+
+```plaintext
+[Start]
+   |
+   v
+[Initialize CriticalVectors Instance]
+   |
+   v
+[Download Raw Content from URL]
+   |
+   v
+[Split Text into Chunks]
+   |
+   v
+[Compute Embeddings for Chunks]
+   |
+   v
+[Select Relevant Chunks via Clustering]
+   |
+   v
+[Get First and Last Parts of Text]
+   |
+   v
+[Output Selected Chunks, First Part, Last Part]
+   |
+   v
+[End]
+```
+
+---
+
+1. **Input Layer**: **Raw Text Data**
+   - **Source**: Downloaded from a specified URL.
+   - **Representation**: A large block of unprocessed text.
+
+2. **Processing Layer**:
+   - **Text Splitting Module**:
+     - **Function**: Divides the text into manageable chunks.
+     - **Methods**: Sentence or paragraph splitting.
+     - **Output**: List of text chunks.
+
+   - **Embedding Computation Module**:
+     - **Function**: Transforms text chunks into numerical vectors.
+     - **Technique**: Uses an embeddings model (e.g., `OllamaEmbeddings`).
+     - **Output**: Array of embeddings.
+
+   - **Clustering Module**:
+     - **Function**: Groups embeddings into clusters.
+     - **Strategies**: KMeans or Agglomerative Clustering.
+     - **Tools**: FAISS or Scikit-learn libraries.
+     - **Output**: Cluster labels and centroids.
+
+3. **Selection Layer**:
+   - **Chunk Selection Module**:
+     - **Function**: Selects the most representative chunk from each cluster.
+     - **Process**: Finds the chunk closest to each centroid.
+     - **Output**: List of selected relevant chunks.
+
+4. **Output Layer**:
+   - **First Part**: The initial chunk of the original text.
+   - **Selected Chunks**: The most relevant chunks extracted.
+   - **Last Part**: The final chunk of the original text.
+
+---
