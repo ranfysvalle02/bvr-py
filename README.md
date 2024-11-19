@@ -536,7 +536,7 @@ labels = clustering.fit_predict(embeddings)
 
 ## Potential Applications
 
-- **Text Summarization**: Extract key sentences to create a summary.
+- **Text Summarization**: Extract key chunks of text to create a summary.
 - **Topic Modeling**: Identify representative chunks for different topics.
 - **Information Retrieval**: Quickly retrieve relevant information from large texts.
 - **Preprocessing for NLP Tasks**: Prepare data by selecting significant parts.
