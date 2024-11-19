@@ -4,6 +4,7 @@
 
 # Extracting Relevant Text Chunks Using Embeddings and Clustering
 
+##  extract the most relevant or representative parts from large volumes of text
 ---
 
 ## Introduction
