@@ -83,7 +83,7 @@ selected_chunks = [chunks[idx] for idx in closest_indices]
 The `CriticalVectors` class is initialized with several parameters:
 
 - **chunk_size** (`int`): The size of each text chunk in characters.
-- **strategy** (`str`): The clustering strategy to use. Options include `'kmeans'`, `'agglomerative'`, and `'map_reduce'`.
+- **strategy** (`str`): The clustering strategy to use. Options include `'kmeans'`,  and `'agglomerative'`.
 - **num_clusters** (`int` or `'auto'`): The number of clusters to form. If set to `'auto'`, the number of clusters is determined automatically based on the data.
 - **embeddings_model**: The embeddings model to use for generating vector representations of text chunks. Defaults to `OllamaEmbeddings` with the `'nomic-embed-text'` model.
 - **split_method** (`str`): The method to split text into chunks. Options are `'sentences'` or `'paragraphs'`.
@@ -165,29 +165,6 @@ selector = CriticalVectors(
 relevant_chunks, first_part, last_part = selector.get_relevant_chunks(text)
 ```
 
-### 3. MapReduce
-
-**Description**:  
-A MapReduce-like strategy that first clusters the chunks and then selects the most representative chunk from each cluster. This approach is efficient for large-scale data processing and ensures that selected chunks are both representative and diverse.
-
-**When to Use**:  
-- When dealing with very large datasets that benefit from parallel processing.
-- When you need a balance between performance and the quality of selected chunks.
-- Suitable for scenarios where you want to reduce data size while preserving essential information.
-
-**Example**:
-```python
-selector = CriticalVectors(
-    strategy='map_reduce',
-    num_clusters='auto',
-    chunk_size=1000,
-    split_method='sentences',
-    max_tokens_per_chunk=100,
-    use_faiss=True
-)
-relevant_chunks, first_part, last_part = selector.get_relevant_chunks(text)
-```
-
 ## Choosing the Right Strategy
 
 Selecting the appropriate clustering strategy depends on the specific requirements of your application and the nature of your data:
@@ -196,45 +173,6 @@ Selecting the appropriate clustering strategy depends on the specific requiremen
   
 - **Agglomerative** is preferable when you need a hierarchical cluster structure or when dealing with clusters of varying shapes and sizes.
   
-- **MapReduce** is best suited for handling large-scale data efficiently while ensuring that the selected chunks are representative of the entire dataset.
-
-**Example Usage**:
-
-```python
-# Using KMeans strategy
-selector_kmeans = CriticalVectors(
-    strategy='kmeans',
-    num_clusters=5,
-    chunk_size=1000,
-    split_method='sentences',
-    max_tokens_per_chunk=100,
-    use_faiss=True
-)
-chunks_kmeans, first_k, last_k = selector_kmeans.get_relevant_chunks(text)
-
-# Using Agglomerative strategy
-selector_agglomerative = CriticalVectors(
-    strategy='agglomerative',
-    num_clusters=5,
-    chunk_size=1000,
-    split_method='paragraphs',
-    max_tokens_per_chunk=150,
-    use_faiss=False
-)
-chunks_agglomerative, first_a, last_a = selector_agglomerative.get_relevant_chunks(text)
-
-# Using MapReduce strategy
-selector_map_reduce = CriticalVectors(
-    strategy='map_reduce',
-    num_clusters='auto',
-    chunk_size=1000,
-    split_method='sentences',
-    max_tokens_per_chunk=100,
-    use_faiss=True
-)
-chunks_map_reduce, first_m, last_m = selector_map_reduce.get_relevant_chunks(text)
-```
-
 By understanding the characteristics and appropriate use-cases for each strategy, you can effectively leverage the `CriticalVectors` class to select the most relevant and representative chunks from your text data.
 
 ### Downloading Content
