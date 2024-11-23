@@ -1,29 +1,21 @@
-# Initialize Ray
-import ray
-ray.init(ignore_reinit_error=True)
-
-# Import required modules
+# https://github.com/ranfysvalle02/critical-vectors
 import numpy as np
 import faiss
 from langchain_ollama import OllamaEmbeddings
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 import requests
+
+# demo setup
 import ollama
-from sklearn.metrics import pairwise_distances_argmin_min
-from itertools import product
-
-# Ensure NLTK punkt tokenizer is downloaded
-nltk.download('punkt', quiet=True)
-
-# Read the dracula.txt file
+desiredModel = 'llama3.2'
+dracula = ""
+with open('./dracula.txt', 'r') as file:
+    dracula = file.read()
 def demo_string():
-    try:
-        with open('./dracula.txt', 'r') as file:
-            dracula = file.read()
-        return dracula
-    except FileNotFoundError:
-        raise FileNotFoundError("The file 'dracula.txt' was not found in the current directory.")
+   return f"""
+{dracula}
+"""
 
 # Define the CriticalVectors class
 class CriticalVectors:
@@ -301,175 +293,31 @@ class CriticalVectors:
         selected_chunks = self.select_chunks(chunks, embeddings)
         return selected_chunks, first_part, last_part
 
+# Example usage:
 
-# Define the Ray remote test function
-@ray.remote
-def run_test(strategy, split_method, chunk_size=10000, max_tokens_per_chunk=1000, use_faiss=False):
+if __name__ == "__main__":
+
+    # Instantiate the selector
     try:
         selector = CriticalVectors(
-            strategy=strategy,
+            strategy='agglomerative',
             num_clusters='auto',
-            chunk_size=chunk_size,
-            split_method=split_method,
-            max_tokens_per_chunk=max_tokens_per_chunk,
-            use_faiss=use_faiss
+            chunk_size=10000,
+            split_method='sentences',
+            max_tokens_per_chunk=1000,  # Adjust as needed
+            use_faiss=False  # Enable FAISS
         )
-
         test_str = demo_string()
-
+        # Get the most relevant chunks using the improved method
         relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
-
-        context = f"beginning:\n{first_part}\n" + "\n".join(relevant_chunks) + f"\n\nlast part:\n{last_part}"
-
-        prompt = f"""[INST]<<SYS>>RESPOND WITH A `consolidated plot summary` OF THE [context]
-\n\n[context] {context} [/context]<</SYS>> RESPOND WITH A `consolidated plot summary` OF THE [context][/INST]"""
-
-        res = ollama.chat(model='llama3.2', messages=[
+        res = ollama.chat(model=desiredModel, messages=[
             {
                 'role': 'user',
-                'content': prompt,
+                'content': "[INST]<<SYS>>" + "RESPOND WITH A `consolidated plot summary` OF THE [context]" + f"\n\n\[context] beginning:\n{first_part} \n" + "\n".join(relevant_chunks) + f"\n\nlast part:\n{last_part}\n[/context]<</SYS>> RESPOND WITH A `consolidated plot summary` OF THE [context][/INST]",
             },
         ])
-
-        summary = res['message']['content'] if 'message' in res and 'content' in res['message'] else "No summary generated."
-
-        return {
-            'strategy': strategy,
-            'split_method': split_method,
-            'summary': summary
-        }
-
+        if res['message']:
+            print(res['message']['content'])
+            exit()
     except Exception as e:
-        return {
-            'strategy': strategy,
-            'split_method': split_method,
-            'error': str(e)
-        }
-
-# Define test configurations
-strategies = ['agglomerative', 'kmeans']
-split_methods = ['sentences', 'paragraphs']
-test_configs = list(product(strategies, split_methods))
-
-print("Test Configurations:")
-for config in test_configs:
-    print(f"Strategy: {config[0]}, Split Method: {config[1]}")
-
-# Run all tests in parallel
-futures = [run_test.remote(strategy, split_method) for strategy, split_method in test_configs]
-results = ray.get(futures)
-
-# Display the results
-for result in results:
-    strategy = result.get('strategy', 'N/A')
-    split_method = result.get('split_method', 'N/A')
-    summary = result.get('summary', 'No summary generated.')
-    error = result.get('error', None)
-    
-    print(f"\n---\nStrategy: {strategy}, Split Method: {split_method}")
-    if error:
-        print(f"Error: {error}")
-    else:
-        print(f"Summary:\n{summary}\n")
-
-
-"""
-2024-11-23 0X:0X:0X,832	INFO worker.py:1777 -- Started a local Ray instance. View the dashboard at 127.0.0.1:8266 
-Test Configurations:
-Strategy: agglomerative, Split Method: sentences
-Strategy: agglomerative, Split Method: paragraphs
-Strategy: kmeans, Split Method: sentences
-Strategy: kmeans, Split Method: paragraphs
-
----
-Strategy: agglomerative, Split Method: sentences
-Summary:
-Here is a consolidated plot summary of the context:
-
-**Main Plot**
-
-The story revolves around the struggles of Jonathan and Mina Harker, a young couple who are trying to deal with supernatural forces that have entered their lives. The narrative unfolds through multiple journals and perspectives, including those of John Harker (Jonathan's brother), Abraham Van Helsing (a Dutch doctor and expert in the supernatural), Quincey Morris (an American friend of Jonathan's), Arthur Holmwood (Quincey's friend and suitor), and Mina herself.
-
-The story begins with John Harker traveling to Transylvania to finalize the sale of a property to Count Dracula, unaware of the horror that awaits him. Upon his return, he confides in his brother and wife about his terrifying experiences, including the death of his servant, Renfield.
-
-As the story progresses, it becomes clear that Mina is also being stalked by Dracula, who has become obsessed with her. The group of friends, led by Van Helsing, band together to stop Dracula's evil plans and save Mina from his clutches.
-
-**Themes and Tone**
-
-Throughout the narrative, the tone shifts between horror, suspense, and a sense of inevitability. The theme of the struggle between good and evil is a dominant one, with the characters facing off against the forces of darkness embodied by Dracula.
-
-The story also explores themes of love, loyalty, and sacrifice, particularly in the relationships between Mina and her friends, as well as Jonathan's devotion to his wife.
-
-**Key Events**
-
-* John Harker travels to Transylvania and discovers the horrors that await him.
-* Renfield is killed by Dracula, and his subsequent madness serves as a warning sign for the group.
-* Mina is attacked by Dracula, but is saved by Van Helsing and Quincey.
-* The group of friends works together to uncover the secrets of Dracula's powers and weaknesses.
-* Jonathan becomes increasingly obsessed with stopping Dracula, despite Mina's wishes that he keep her safe.
-
-**Climax and Conclusion**
-
-The climax of the story revolves around the final confrontation between Van Helsing and Dracula. In the end, it is Van Helsing who delivers the fatal blow to the vampire, saving Mina from his grasp. The narrative concludes with a sense of relief and closure, as the surviving characters come to terms with the trauma they have experienced.
-
-Ultimately, the story raises questions about the nature of evil and the power of human love and friendship in the face of darkness and despair.
-
-
----
-Strategy: agglomerative, Split Method: paragraphs
-Summary:
-Here is a consolidated plot summary:
-
-The story begins with Jonathan Harker's journey to Transylvania, where he meets Count Dracula and discovers his true nature. Meanwhile, back in England, Harker's fiancée, Mina, becomes ill and is hospitalized. Dr. Seward, a friend of Harker's, takes over as Mina's doctor.
-
-As the story unfolds, it becomes clear that Dracula has arrived in England, spreading vampirism and terrorizing the living. Dr. Seward, along with his assistant Quincey Morris and the solicitor Arthur Holmwood, who is seeking revenge for his sister's death at Dracula's hands, band together to stop him.
-
-The group discovers that Mina has become a vampire herself and is being held by Dracula. They also learn about Dracula's powers and weaknesses, including his aversion to garlic, holy water, and sunlight. Van Helsing, a Dutch doctor who specializes in supernatural diseases, joins the group and helps them develop a plan to defeat Dracula.
-
-The story culminates in a final confrontation between the group and Dracula, with the help of Quincey's death by vampire bite (which allows him to fight back against his undead state), the powers of garlic and holy water, and Van Helsing's knowledge of supernatural lore. In the end, Dracula is defeated, and Mina is restored to her human form.
-
-Throughout the story, themes of love, sacrifice, and the struggle between good and evil are explored, as well as the power of friendship and determination in the face of overwhelming odds.
-
-
----
-Strategy: kmeans, Split Method: sentences
-Summary:
-Here is a consolidated plot summary of the context:
-
-The story begins with Jonathan Harker, a young solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. While there, he becomes trapped in the castle and discovers that he is a prisoner. He manages to escape with the help of a servant named Renfield.
-
-Unbeknownst to Harker, his experiences in the castle have caused him significant physical and emotional distress, leading to his death in England.
-
-Back in England, Harker's fiancée, Mina, begins to experience strange occurrences, including visions and auditory hallucinations. She becomes increasingly ill and is eventually admitted to an insane asylum.
-
-It is revealed that Mina has become the target of Dracula's attentions, and she has begun to see and hear things that are not there - she believes that she can hear the lapping of water and see a ship at sea, even though she is in her bed. She eventually awakens from a trance-like state, unaware of what she experienced.
-
-As Mina recovers, it becomes clear that Dracula's powers have caused her to become possessed by his spirit. The group of men who are concerned for her well-being, including Dr. Van Helsing, Lord Godalming, Mr. Morris, and Quincey Morris (Jonathan's friend), realize that they must find a way to stop Dracula and save Mina.
-
-The group discovers that Dracula is attempting to escape from England by taking his coffin on board a ship in the port of London. They devise a plan to follow him and prevent him from escaping, and they begin to track his movements around the city.
-
-Ultimately, the group is able to find Dracula's ship and follow it to its destination, but the story ends with no further details about what happens next.
-
-
----
-Strategy: kmeans, Split Method: paragraphs
-Summary:
-Here is a consolidated plot summary of the context:
-
-**Plot Summary**
-
-The story begins with Jonathan Harker, who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he has been invited to the castle as a guest, not just a business acquaintance.
-
-Upon his arrival at the castle, Harker discovers that he is a prisoner and that Count Dracula is a vampire. He manages to escape from the castle with the help of a local villager named Quincey Morris.
-
-The story then shifts to London, where Harker's friend, Abraham Van Helsing, a professor of folklore and mythology, learns about Harker's encounter with Dracula. Van Helsing informs Harker that he is being drawn into a supernatural struggle against vampires.
-
-Harker joins forces with Van Helsing, as well as his friends John Seward and Quincey Morris, to help Harker defeat Dracula. Along the way, they discover that Dracula has created a series of vampire minions, including Lucy Westenra, who is transformed into a vampire after being bitten by Dracula.
-
-As the story unfolds, it becomes clear that Dracula's powers are growing stronger, and that he will stop at nothing to spread his evil influence. The group ultimately decides to destroy Dracula's powers and prevent him from turning anyone else into a vampire.
-
-In the final chapters of the book, the protagonists travel to Transylvania to confront Dracula once again. This time, they are joined by Mina Harker, Jonathan's fiancée, who has been drawn into the supernatural struggle against vampires.
-
-The story culminates in a dramatic showdown between the heroes and Dracula, resulting in the vampire's ultimate defeat and destruction.
-
-"""
+        print(f"An error occurred: {e}")
