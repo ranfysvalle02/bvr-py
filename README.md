@@ -31,10 +31,6 @@ From each cluster, the chunk whose embedding is closest to the centroid (the cen
 
 You can choose whether to use FAISS by setting the `use_faiss` parameter during initialization. If `use_faiss` is set to `True`, FAISS will be used for clustering. If it's set to `False`, scikit-learn's implementations of the clustering algorithms will be used instead.
 
-## "Lost in the Middle" (sortof)
-
-- **Context Preservation**: While the tool can identify and extract the most representative chunks of text, it might not always preserve the overall narrative or context depending on the length and other factors.
-  
 ## How It Works
 
 ### 1. Text Splitting
@@ -329,6 +325,16 @@ In summary, semantic extraction and hierarchical clustering serve different purp
 6. **FAISS Limitations**: While FAISS provides efficient clustering for large datasets, it only supports Euclidean distance and inner product similarity. This might limit its effectiveness for certain types of data or use cases.
 
 7. **Hierarchical Clustering**: Hierarchical clustering can be computationally expensive for large datasets. Also, the dendrogram produced by hierarchical clustering might not always be easy to interpret, especially for large numbers of clusters.
+
+## "Lost in the Middle" (sortof)
+
+### Context Preservation: A Consideration
+
+While CriticalVectors is a powerful tool for identifying and extracting the most representative chunks of text, it's important to note that it might not always preserve the overall narrative or context of the text. This is particularly true when dealing with long texts or those with complex narratives.
+
+The tool works by selecting individual chunks based on their semantic similarity, which might not align with the original order or flow of the text. Therefore, while it's excellent for extracting key points or topics, it might not always maintain the original storyline or context, especially when the length and complexity of the text increase.
+
+This is not necessarily a limitation, but rather a consideration to keep in mind when using the tool. Depending on your specific use case, you might need to combine the use of CriticalVectors with other methods or tools to ensure that the context or narrative of the text is preserved.
 
 ---
 
