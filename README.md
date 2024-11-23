@@ -145,6 +145,8 @@ relevant_chunks, first_part, last_part = selector.get_relevant_chunks(text)
 **Description**:  
 Agglomerative Clustering is a hierarchical clustering method that builds nested clusters by successively merging or splitting them based on similarity.
 
+**Agglomerative Hierarchical Clustering (Bottom-Up Approach)**: The most common type of hierarchical clustering. It starts by treating each data point as a single cluster, and then successively merges the closest pairs of clusters until only one cluster (or a specified number of clusters) remains. The "closeness" of two clusters is determined by a distance metric (such as Euclidean distance for numerical data or Jaccard distance for categorical data) and a linkage criterion (such as single, complete, average, or Ward's method).
+
 **When to Use**:  
 - When you require a hierarchical understanding of the data.
 - Suitable for datasets where clusters may not be spherical or have varying densities.
