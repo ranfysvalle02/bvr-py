@@ -76,30 +76,141 @@ From each cluster, the chunk closest to the centroid (central point) is selected
 selected_chunks = [chunks[idx] for idx in closest_indices]
 ```
 
-## Code Explanation
+# Code Explanation
 
-### Initialization
+## Initialization
 
 The `CriticalVectors` class is initialized with several parameters:
 
-- `chunk_size`: The size of each text chunk in characters.
-- `strategy`: The clustering strategy (`'kmeans'` or `'agglomerative'`).
-- `num_clusters`: The number of clusters or `'auto'` to determine automatically.
-- `embeddings_model`: The embeddings model to use. Defaults to `OllamaEmbeddings` with `'nomic-embed-text'`.
-- `split_method`: The method to split text (`'sentences'` or `'paragraphs'`).
-- `max_tokens_per_chunk`: The maximum number of tokens per chunk.
-- `use_faiss`: Whether to use FAISS for clustering.
+- **chunk_size** (`int`): The size of each text chunk in characters.
+- **strategy** (`str`): The clustering strategy to use. Options include `'kmeans'`, `'agglomerative'`, and `'map_reduce'`.
+- **num_clusters** (`int` or `'auto'`): The number of clusters to form. If set to `'auto'`, the number of clusters is determined automatically based on the data.
+- **embeddings_model**: The embeddings model to use for generating vector representations of text chunks. Defaults to `OllamaEmbeddings` with the `'nomic-embed-text'` model.
+- **split_method** (`str`): The method to split text into chunks. Options are `'sentences'` or `'paragraphs'`.
+- **max_tokens_per_chunk** (`int`): The maximum number of tokens allowed per chunk when splitting the text.
+- **use_faiss** (`bool`): Whether to use FAISS for efficient clustering. Set to `True` to enable FAISS.
 
+## Strategies
+
+The `strategy` parameter determines how the `CriticalVectors` class selects the most relevant chunks from the text. Each strategy has its own advantages and use-cases. Below are the available strategies along with guidance on how to choose between them and examples of their usage.
+
+### 1. KMeans
+
+**Description**:  
+KMeans clustering partitions the data into a predefined number of clusters. Each chunk is assigned to the nearest cluster centroid based on its embedding.
+
+**When to Use**:  
+- When you have a rough estimate of the number of clusters that best represent your data.
+- Suitable for large datasets where computational efficiency is a priority.
+- When clusters are expected to be roughly spherical in the embedding space.
+
+**Example**:
 ```python
 selector = CriticalVectors(
     strategy='kmeans',
+    num_clusters=10,
+    chunk_size=1000,
+    split_method='sentences',
+    max_tokens_per_chunk=100,
+    use_faiss=True
+)
+relevant_chunks, first_part, last_part = selector.get_relevant_chunks(text)
+```
+
+### 2. Agglomerative
+
+**Description**:  
+Agglomerative Clustering is a hierarchical clustering method that builds nested clusters by successively merging or splitting them based on similarity.
+
+**When to Use**:  
+- When you require a hierarchical understanding of the data.
+- Suitable for datasets where clusters may not be spherical or have varying densities.
+- When interpretability of the cluster hierarchy is important.
+
+**Example**:
+```python
+selector = CriticalVectors(
+    strategy='agglomerative',
+    num_clusters=8,
+    chunk_size=1000,
+    split_method='paragraphs',
+    max_tokens_per_chunk=150,
+    use_faiss=False
+)
+relevant_chunks, first_part, last_part = selector.get_relevant_chunks(text)
+```
+
+### 3. MapReduce
+
+**Description**:  
+A MapReduce-like strategy that first clusters the chunks and then selects the most representative chunk from each cluster. This approach is efficient for large-scale data processing and ensures that selected chunks are both representative and diverse.
+
+**When to Use**:  
+- When dealing with very large datasets that benefit from parallel processing.
+- When you need a balance between performance and the quality of selected chunks.
+- Suitable for scenarios where you want to reduce data size while preserving essential information.
+
+**Example**:
+```python
+selector = CriticalVectors(
+    strategy='map_reduce',
     num_clusters='auto',
     chunk_size=1000,
     split_method='sentences',
     max_tokens_per_chunk=100,
     use_faiss=True
 )
+relevant_chunks, first_part, last_part = selector.get_relevant_chunks(text)
 ```
+
+## Choosing the Right Strategy
+
+Selecting the appropriate clustering strategy depends on the specific requirements of your application and the nature of your data:
+
+- **KMeans** is ideal for standard clustering tasks with a known or estimable number of clusters and when computational efficiency is crucial.
+  
+- **Agglomerative** is preferable when you need a hierarchical cluster structure or when dealing with clusters of varying shapes and sizes.
+  
+- **MapReduce** is best suited for handling large-scale data efficiently while ensuring that the selected chunks are representative of the entire dataset.
+
+**Example Usage**:
+
+```python
+# Using KMeans strategy
+selector_kmeans = CriticalVectors(
+    strategy='kmeans',
+    num_clusters=5,
+    chunk_size=1000,
+    split_method='sentences',
+    max_tokens_per_chunk=100,
+    use_faiss=True
+)
+chunks_kmeans, first_k, last_k = selector_kmeans.get_relevant_chunks(text)
+
+# Using Agglomerative strategy
+selector_agglomerative = CriticalVectors(
+    strategy='agglomerative',
+    num_clusters=5,
+    chunk_size=1000,
+    split_method='paragraphs',
+    max_tokens_per_chunk=150,
+    use_faiss=False
+)
+chunks_agglomerative, first_a, last_a = selector_agglomerative.get_relevant_chunks(text)
+
+# Using MapReduce strategy
+selector_map_reduce = CriticalVectors(
+    strategy='map_reduce',
+    num_clusters='auto',
+    chunk_size=1000,
+    split_method='sentences',
+    max_tokens_per_chunk=100,
+    use_faiss=True
+)
+chunks_map_reduce, first_m, last_m = selector_map_reduce.get_relevant_chunks(text)
+```
+
+By understanding the characteristics and appropriate use-cases for each strategy, you can effectively leverage the `CriticalVectors` class to select the most relevant and representative chunks from your text data.
 
 ### Downloading Content
 
