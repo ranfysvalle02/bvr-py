@@ -161,6 +161,38 @@ clustering = AgglomerativeClustering(n_clusters=num_clusters)
 labels = clustering.fit_predict(embeddings)
 ```
 
+KMeans and Agglomerative Clustering are two popular types of clustering algorithms. Here's a comparison of the two:
+
+1. **Algorithm Structure:**
+
+   - **KMeans:** KMeans is a centroid-based or partitioning method. It clusters the data into K groups by minimizing the sum of the squared distances (Euclidean distances) between the data and the corresponding centroid. The algorithm iteratively assigns each data point to one of the K groups based on the features that are provided.
+
+   - **Agglomerative Clustering:** Agglomerative Clustering is a hierarchical clustering method. It starts by treating each object as a singleton cluster. Next, pairs of clusters are successively merged until all clusters have been merged into a single cluster that contains all objects. The result is a tree-based representation of the objects, named dendrogram.
+
+2. **Scalability:**
+
+   - **KMeans:** KMeans is more scalable. It can handle large datasets because it only needs to store the centroids of the clusters and the data points are clustered based on their distance to the centroids.
+
+   - **Agglomerative Clustering:** Agglomerative Clustering is less scalable for large datasets. It needs to store the distance matrix which requires a lot of memory for large datasets.
+
+3. **Number of Clusters:**
+
+   - **KMeans:** In KMeans, you need to specify the number of clusters (K) at the beginning.
+
+   - **Agglomerative Clustering:** In Agglomerative Clustering, you don't need to specify the number of clusters at the beginning. You can cut the dendrogram at any level and get the desired number of clusters.
+
+4. **Quality of Clusters:**
+
+   - **KMeans:** KMeans can result in more compact clusters than hierarchical clustering.
+
+   - **Agglomerative Clustering:** Agglomerative Clustering can result in clusters of less compact shape than KMeans.
+
+5. **Use Cases:**
+
+   - **KMeans:** KMeans is useful when you have a good idea of the number of distinct clusters your dataset should be segmented into. Typically, it's good for customer segmentation, document clustering, image segmentation, etc.
+
+   - **Agglomerative Clustering:** Agglomerative Clustering is useful when you don't know how many clusters you might want to end up with. It's good for hierarchical taxonomies, biological taxonomies, etc.
+
 ## Comparing Semantic Extraction and Hierarchical Clustering
 
 ### Semantic Extraction
