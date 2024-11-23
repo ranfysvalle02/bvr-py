@@ -99,15 +99,12 @@ The `strategy` parameter determines how the `CriticalVectors` class selects the 
 |-----------------|--------------------------------------------------------------------------------------------------|------------------------------------------------------------|----------------------------------------------------------|---------------------------------------------------------|
 | **KMeans**      | Uses KMeans clustering to group chunks into clusters and selects the closest chunk to each cluster centroid. | - Handles large amounts of data well. <br>- Can find representative samples effectively. | - May require manual tuning for number of clusters. <br>- Clustering quality depends on initialization. | Suitable for general summarization and clustering tasks where representative text segments are required. |
 | **Agglomerative Clustering** | Uses a hierarchical approach to cluster the chunks, merging chunks until a desired number of clusters is achieved. | - No need to specify the number of clusters in advance. <br>- Builds a hierarchy of clusters, which can be informative. | - Computationally expensive for large data sets. <br>- May not work as well for very large text collections due to complexity. | Useful when a clear hierarchical structure of the text data is beneficial or when the dataset is relatively small. |
-| **MapReduce**   | Applies a two-step MapReduce-like approach to first cluster the embeddings and then reduce each cluster to a representative chunk. | - More efficient for large data sets due to parallelism. <br>- Provides a balanced approach for selecting representative chunks. | - More complex to implement and may require additional tuning. <br>- Relies on clustering performance in both the map and reduce steps. | Suitable for processing large-scale text data efficiently by balancing clustering and representativeness. |
 
 Here's a summary of the key aspects of each strategy:
 
 - **KMeans**: This is one of the most popular clustering methods, which works by creating `k` clusters and assigning data points to the nearest cluster center. The approach is well-suited to applications where you want representative samples from distinct groups but requires careful selection of the number of clusters. KMeans is implemented either using **Scikit-Learn** or **FAISS** for accelerated performance.
 
 - **Agglomerative Clustering**: A hierarchical clustering method that recursively merges data points and clusters until a set number of clusters remain. It does not require a specified number of clusters initially, making it more flexible. However, due to its complexity, it is less practical for larger datasets compared to KMeans.
-
-- **MapReduce**: This approach leverages a map and reduce strategy to first cluster text embeddings and then select representative chunks from each cluster. The map step involves clustering the text embeddings, and the reduce step finds the most representative chunk within each cluster. This strategy can be computationally efficient, especially with FAISS, but involves more steps, making it more complex to implement and tune.
 
 ### Recommendations for Use:
 
