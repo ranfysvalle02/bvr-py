@@ -59,7 +59,7 @@ class CriticalVectors:
         self.chunk_size = chunk_size
 
         # Validate strategy
-        valid_strategies = ['kmeans', 'agglomerative', 'map_reduce']
+        valid_strategies = ['kmeans', 'agglomerative']
         if strategy not in valid_strategies:
             raise ValueError(f"strategy must be one of {valid_strategies}.")
         self.strategy = strategy
@@ -180,8 +180,6 @@ class CriticalVectors:
             return self._select_chunks_kmeans(chunks, embeddings, num_clusters)
         elif self.strategy == 'agglomerative':
             return self._select_chunks_agglomerative(chunks, embeddings, num_clusters)
-        elif self.strategy == 'map_reduce':
-            return self._select_chunks_map_reduce(chunks, embeddings, num_clusters)
         else:
             # This should not happen due to validation in __init__
             raise ValueError(f"Unknown strategy: {self.strategy}")
@@ -270,60 +268,6 @@ class CriticalVectors:
 
         selected_chunks = [chunks[idx] for idx in selected_indices]
         return selected_chunks
-    def _select_chunks_map_reduce(self, chunks, embeddings, num_clusters):
-        """
-        Selects chunks using a MapReduce-like strategy.
-
-        Parameters:
-        - chunks (List[str]): List of text chunks.
-        - embeddings (np.ndarray): Embeddings of the chunks.
-        - num_clusters (int): Number of clusters.
-
-        Returns:
-        - List[str]: Selected chunks.
-        """
-        # Map Step: Cluster the embeddings
-        if self.use_faiss:
-            try:
-                d = embeddings.shape[1]
-                kmeans = faiss.Kmeans(d, num_clusters, niter=20, verbose=False)
-                kmeans.train(embeddings)
-                D, I = kmeans.index.search(embeddings, 1)
-                labels = I.flatten()
-            except Exception as e:
-                raise RuntimeError(f"Error in FAISS KMeans clustering during map step: {e}")
-        else:
-            try:
-                from sklearn.cluster import KMeans
-                kmeans = KMeans(n_clusters=num_clusters, random_state=1337)
-                kmeans.fit(embeddings)
-                labels = kmeans.labels_
-            except Exception as e:
-                raise RuntimeError(f"Error in KMeans clustering during map step: {e}")
-
-        # Reduce Step: Select representative chunks from each cluster
-        try:
-            selected_chunks = []
-            for cluster_id in range(num_clusters):
-                cluster_indices = np.where(labels == cluster_id)[0]
-                if len(cluster_indices) == 0:
-                    continue  # Skip empty clusters
-                cluster_embeddings = embeddings[cluster_indices]
-                if self.use_faiss:
-                    centroid = np.mean(cluster_embeddings, axis=0).astype('float32').reshape(1, -1)
-                    index = faiss.IndexFlatL2(embeddings.shape[1])
-                    index.add(cluster_embeddings)
-                    D, I = index.search(centroid, 1)
-                    closest_index = cluster_indices[I[0][0]]
-                else:
-                    from sklearn.metrics import pairwise_distances_argmin_min
-                    centroid = np.mean(cluster_embeddings, axis=0).reshape(1, -1)
-                    closest_idx, _ = pairwise_distances_argmin_min(centroid, cluster_embeddings)
-                    closest_index = cluster_indices[closest_idx[0]]
-                selected_chunks.append(chunks[closest_index])
-            return selected_chunks
-        except Exception as e:
-            raise RuntimeError(f"Error in Reduce step of MapReduce strategy: {e}")
 
     def get_relevant_chunks(self, text):
         """
@@ -403,7 +347,7 @@ def run_test(strategy, split_method, chunk_size=10000, max_tokens_per_chunk=1000
         }
 
 # Define test configurations
-strategies = ['agglomerative', 'kmeans', 'map_reduce']
+strategies = ['agglomerative', 'kmeans']
 split_methods = ['sentences', 'paragraphs']
 test_configs = list(product(strategies, split_methods))
 
@@ -528,53 +472,4 @@ In the final chapters of the book, the protagonists travel to Transylvania to co
 
 The story culminates in a dramatic showdown between the heroes and Dracula, resulting in the vampire's ultimate defeat and destruction.
 
----
-Strategy: map_reduce, Split Method: sentences
-Summary:
-Here is a consolidated plot summary of the context:
-
-**Summary**
-
-The story begins with Jonathan Harker, a young lawyer who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he has entered a vampire's lair, and Dracula escapes from his castle while Harker is away.
-
-Meanwhile, back in England, Harker's fiancée, Mina, becomes ill with an unknown disease that seems to be spreading rapidly among the population. Her friend Lucy Westenra also falls victim to the same illness, which eventually leads to her death after a series of bizarre and terrifying events.
-
-The remaining characters - Dr. Seward, Mr. Quincey Morris, Lord Godalming, and Van Helsing - band together to try and stop Dracula's evil plans. They realize that Mina is somehow connected to the supernatural events unfolding in Transylvania and that she may be the key to defeating the vampire.
-
-After a series of encounters with various supernatural entities, including Mina herself, who falls into a trance-like state while trying to communicate with someone, the group discovers that Dracula has taken his lair to England and is hiding on a ship docked in London. They follow the ship's journey, which takes them across the waters, as Mina continues to have visions of the sea.
-
-As they navigate their way through these uncharted territories, the characters receive clues about Dracula's whereabouts, including the Count's escape from his castle and his desire to flee London due to its danger. The group ultimately decides to follow Dracula's trail across the waters, but not before taking some time to rest, eat, and prepare for their journey.
-
-**Themes**
-
-* Supernatural horror and suspense
-* Friendship and teamwork in the face of evil
-* Love and sacrifice (Jonathan Harker's love for Mina drives his actions throughout the story)
-* The power of human connection and understanding between characters
-
-**Notable Characters**
-
-* Count Dracula: the vampire and main antagonist
-* Jonathan Harker: the protagonist, a young lawyer who travels to Transylvania and becomes entangled in supernatural events
-* Mina Westenra: Harker's fiancée, who becomes ill with an unknown disease and undergoes a series of bizarre transformations
-* Dr. Seward: a psychiatrist who houses Lucy Westenra and tries to help her recover from the supernatural illness
-* Mr. Quincey Morris: an American adventurer who joins the group to hunt down Dracula
-* Lord Godalming: a nobleman who participates in the quest to defeat Dracula
-* Van Helsing: a Dutch doctor with expertise in the supernatural, who becomes the team's leader and guide
-
-
----
-Strategy: map_reduce, Split Method: paragraphs
-Summary:
-Here is a consolidated plot summary of the context:
-
-A young man named Jonathan Harker travels to Transylvania to finalize the sale of a property to Count Dracula. Upon his return, he shares his terrifying experiences with his friends and acquaintances. One of his friends, Dr. Van Helsing, a Dutch doctor, is revealed to be a vampire hunter.
-
-Van Helsing confides in Harker that Lucy Westenra, a friend of Harker's fiancée Mina, has been transformed into a vampire by Count Dracula through her blood. He believes that the only way to save Lucy is to perform an exorcism and stake through her heart with a cross-stake.
-
-Harker agrees to accompany Van Helsing to visit Lucy in the hospital, where she is being treated for a mysterious illness. However, upon their arrival at the hospital, they discover that Lucy has already been transformed into a vampire, and her blood is spreading rapidly.
-
-Van Helsing's statement "They were made by Miss Lucy" shocks Harker, implying that Lucy created other vampires using her own powers as a vampire. The two men then decide to take action to stop the spread of vampirism and save Lucy.
-
-Note: This summary only covers the initial part of the story and does not include the entire plot, which unfolds over several chapters and involves further adventures with Van Helsing, Mina, and other characters.
 """
