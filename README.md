@@ -110,7 +110,6 @@ Here's a summary of the key aspects of each strategy:
 
 - If you need **scalability and efficiency**, especially for large datasets, and can deal with setting cluster numbers, **KMeans** (especially with FAISS) is a good choice.
 - When you want **hierarchical relationships** among chunks or you have smaller datasets, **Agglomerative Clustering** provides a good hierarchical breakdown.
-- For **large-scale applications** where balance between representativeness and computational efficiency is needed, **MapReduce** can be effective.
 
 If you're looking for a practical approach for summarizing or selecting text from a large document, the **KMeans** strategy with automatic cluster determination (`num_clusters='auto'`) is generally a good starting point due to its balance between simplicity and performance.
 
