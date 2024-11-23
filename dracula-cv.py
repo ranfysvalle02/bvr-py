@@ -51,7 +51,7 @@ class CriticalVectors:
         self.chunk_size = chunk_size
 
         # Validate strategy
-        valid_strategies = ['kmeans', 'agglomerative']
+        valid_strategies = ['kmeans', 'agglomerative', 'map_reduce']
         if strategy not in valid_strategies:
             raise ValueError(f"strategy must be one of {valid_strategies}.")
         self.strategy = strategy
@@ -172,6 +172,8 @@ class CriticalVectors:
             return self._select_chunks_kmeans(chunks, embeddings, num_clusters)
         elif self.strategy == 'agglomerative':
             return self._select_chunks_agglomerative(chunks, embeddings, num_clusters)
+        elif self.strategy == 'map_reduce':
+            return self._select_chunks_map_reduce(chunks, embeddings, num_clusters)
         else:
             # This should not happen due to validation in __init__
             raise ValueError(f"Unknown strategy: {self.strategy}")
@@ -260,6 +262,60 @@ class CriticalVectors:
 
         selected_chunks = [chunks[idx] for idx in selected_indices]
         return selected_chunks
+    def _select_chunks_map_reduce(self, chunks, embeddings, num_clusters):
+        """
+        Selects chunks using a MapReduce-like strategy.
+
+        Parameters:
+        - chunks (List[str]): List of text chunks.
+        - embeddings (np.ndarray): Embeddings of the chunks.
+        - num_clusters (int): Number of clusters.
+
+        Returns:
+        - List[str]: Selected chunks.
+        """
+        # Map Step: Cluster the embeddings
+        if self.use_faiss:
+            try:
+                d = embeddings.shape[1]
+                kmeans = faiss.Kmeans(d, num_clusters, niter=20, verbose=False)
+                kmeans.train(embeddings)
+                D, I = kmeans.index.search(embeddings, 1)
+                labels = I.flatten()
+            except Exception as e:
+                raise RuntimeError(f"Error in FAISS KMeans clustering during map step: {e}")
+        else:
+            try:
+                from sklearn.cluster import KMeans
+                kmeans = KMeans(n_clusters=num_clusters, random_state=1337)
+                kmeans.fit(embeddings)
+                labels = kmeans.labels_
+            except Exception as e:
+                raise RuntimeError(f"Error in KMeans clustering during map step: {e}")
+
+        # Reduce Step: Select representative chunks from each cluster
+        try:
+            selected_chunks = []
+            for cluster_id in range(num_clusters):
+                cluster_indices = np.where(labels == cluster_id)[0]
+                if len(cluster_indices) == 0:
+                    continue  # Skip empty clusters
+                cluster_embeddings = embeddings[cluster_indices]
+                if self.use_faiss:
+                    centroid = np.mean(cluster_embeddings, axis=0).astype('float32').reshape(1, -1)
+                    index = faiss.IndexFlatL2(embeddings.shape[1])
+                    index.add(cluster_embeddings)
+                    D, I = index.search(centroid, 1)
+                    closest_index = cluster_indices[I[0][0]]
+                else:
+                    from sklearn.metrics import pairwise_distances_argmin_min
+                    centroid = np.mean(cluster_embeddings, axis=0).reshape(1, -1)
+                    closest_idx, _ = pairwise_distances_argmin_min(centroid, cluster_embeddings)
+                    closest_index = cluster_indices[closest_idx[0]]
+                selected_chunks.append(chunks[closest_index])
+            return selected_chunks
+        except Exception as e:
+            raise RuntimeError(f"Error in Reduce step of MapReduce strategy: {e}")
 
     def get_relevant_chunks(self, text):
         """
@@ -293,6 +349,7 @@ class CriticalVectors:
         selected_chunks = self.select_chunks(chunks, embeddings)
         return selected_chunks, first_part, last_part
 
+
 # Example usage:
 
 if __name__ == "__main__":
@@ -300,12 +357,12 @@ if __name__ == "__main__":
     # Instantiate the selector
     try:
         selector = CriticalVectors(
-            strategy='agglomerative',
+            strategy='map_reduce',
             num_clusters='auto',
             chunk_size=10000,
             split_method='sentences',
             max_tokens_per_chunk=1000,  # Adjust as needed
-            use_faiss=False  # Enable FAISS
+            use_faiss=True  # Enable FAISS
         )
         test_str = demo_string()
         # Get the most relevant chunks using the improved method
@@ -321,3 +378,28 @@ if __name__ == "__main__":
             exit()
     except Exception as e:
         print(f"An error occurred: {e}")
+
+"""
+selector = CriticalVectors(
+    strategy='map_reduce',
+    num_clusters='auto',
+    chunk_size=10000,
+    split_method='sentences',
+    max_tokens_per_chunk=1000,  # Adjust as needed
+    use_faiss=True  # Enable FAISS
+)
+WARNING clustering 195 points to 14 centroids: please provide at least 546 training points
+Here is a consolidated plot summary of the story:
+
+The narrative revolves around Jonathan Harker, a young solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he has unknowingly entered a world of horror and supernatural beings.
+
+Upon his arrival in Transylvania, Harker discovers that the castle is inhabited by a dark and sinister figure, which he later learns is Count Dracula. After being imprisoned in the castle, Harker barely escapes with his life.
+
+The story then shifts to Mina Murray, Jonathan's fiancée, who becomes entangled in the web of supernatural events unfolding around her beloved. Mina begins to experience strange occurrences and eventually meets Dracula himself.
+
+As the narrative unfolds, it is revealed that Dracula has arrived in England, disguising himself as a young man with a beaky nose and black moustache. Jonathan recognizes this individual as the same Count Dracula he encountered in Transylvania.
+
+The story takes a dramatic turn when Jonathan becomes increasingly ill, suggesting that his mental state may be fragile due to the traumatic experiences he had in Transylvania. Mina discovers a mysterious parcel containing documents about her fiancé's travels, which ultimately reveals the truth about Dracula's identity and intentions.
+
+In the final part of the narrative, Van Helsing, a wise and experienced professor, explains that the story will become known as "The Truth" one day, when Jonathan's son comes to understand his mother's bravery and love for him. The narrative concludes with Van Helsing summarizing the events and emphasizing the importance of believing in the supernatural stories told by those who have experienced them firsthand.
+"""
