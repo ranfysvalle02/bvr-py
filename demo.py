@@ -1,3 +1,4 @@
+# https://github.com/ranfysvalle02/critical-vectors
 import numpy as np
 import faiss
 from langchain_ollama import OllamaEmbeddings
@@ -7,20 +8,14 @@ import requests
 
 # demo setup
 import ollama
-desiredModel = 'llama3.2:3b'
-
+desiredModel = 'llama3.2'
+dracula = ""
+with open('./dracula.txt', 'r') as file:
+    dracula = file.read()
 def demo_string():
-    url = f"https://en.wikipedia.org/wiki/Puerto_Rico"
-    # Tokens: 218430
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # Raise an HTTPError for bad responses
-        print("Tokens:", len(word_tokenize(response.text)))
-        return response.text
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-    except Exception as err:
-        print(f"An error occurred: {err}")
+   return f"""
+{dracula}
+"""
 
 # Define the CriticalVectors class
 class CriticalVectors:
@@ -307,29 +302,37 @@ if __name__ == "__main__":
         selector = CriticalVectors(
             strategy='kmeans',
             num_clusters='auto',
-            chunk_size=1000,
+            chunk_size=10000,
             split_method='sentences',
-            max_tokens_per_chunk=100,  # Adjust as needed
+            max_tokens_per_chunk=10000,  # Adjust as needed
             use_faiss=True  # Enable FAISS
         )
         test_str = demo_string()
         # Get the most relevant chunks using the improved method
         relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
-        print(first_part)
-        print("======================")
-        for chunk in relevant_chunks:
-            print(chunk)
-        # Print the last part
-        print("======================")
-        print(last_part)
         res = ollama.chat(model=desiredModel, messages=[
             {
                 'role': 'user',
-                'content': "[INST]<<SYS>>" + "RESPOND WITH A SHORT SUMMARY OF THE [context]" + "\n\n\[context] beginning:\n{first_part} \n" + "\n".join(relevant_chunks) + "\n\nlast part:\n{last_part}\n[/context]<</SYS>>[/INST]",
+                'content': "[INST]<<SYS>>" + "RESPOND WITH A `consolidated plot summary` OF THE [context]" + f"\n\n\[context] beginning:\n{first_part} \n" + "\n".join(relevant_chunks) + f"\n\nlast part:\n{last_part}\n[/context]<</SYS>> RESPOND WITH A `consolidated plot summary` OF THE [context][/INST]",
             },
         ])
         if res['message']:
-            print(res['message'])
+            print(res['message']['content'])
             exit()
     except Exception as e:
         print(f"An error occurred: {e}")
+
+"""
+WARNING clustering 20 points to 5 centroids: please provide at least 195 training points
+Here is a consolidated plot summary of the text:
+
+The story begins with Jonathan Harker, a young solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he has become entangled in a web of supernatural events. After escaping from the castle, Harker tells his fiancée Mina and her friends about the horrors he experienced.
+
+The group soon discovers that they are all connected to each other through their relationships with Mina, who is also Dracula's victim. They learn that the vampire Quincey Morris was killed by Dracula, but his spirit has passed into their son's body. The group decides to make a journey to Transylvania to revisit the old ground and see if they can find any evidence of the supernatural events.
+
+Upon returning home, the group reviews the papers they have collected, including Harker's journal and Mina's notes. They realize that there is hardly any authentic document among their collection, but Mina's notes and Jonathan's later writings serve as proof of the supernatural events.
+
+The story concludes with a message from Jonathan to his son, who will one day understand what a brave and loving woman his mother is. The group has come to accept the reality of the supernatural world they have encountered, but their experiences have also brought them closer together as friends and family.
+
+Overall, the story is a tale of friendship, love, and survival against the forces of darkness. It follows the journey of Jonathan Harker, Mina, and their companions as they navigate the dangers of vampirism and ultimately find closure and redemption in the face of supernatural adversity.
+"""
