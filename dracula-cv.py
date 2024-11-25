@@ -1,19 +1,24 @@
-# https://github.com/ranfysvalle02/critical-vectors
 import numpy as np
 import faiss
 from langchain_ollama import OllamaEmbeddings
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 import requests
+from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.metrics import pairwise_distances
 
-# demo setup
+# Ensure NLTK data is downloaded
+nltk.download('punkt', quiet=True)
+
+# Demo setup
 import ollama
 desiredModel = 'llama3.2'
 dracula = ""
 with open('./dracula.txt', 'r') as file:
     dracula = file.read()
+
 def demo_string():
-   return f"""
+    return f"""
 {dracula}
 """
 
@@ -194,6 +199,8 @@ class CriticalVectors:
         Returns:
         - List[str]: Selected chunks.
         """
+        selected_indices = []
+
         if self.use_faiss:
             try:
                 d = embeddings.shape[1]
@@ -203,7 +210,10 @@ class CriticalVectors:
                 index = faiss.IndexFlatL2(d)
                 index.add(embeddings)
                 D, I = index.search(centroids, self.chunks_per_cluster)
-                selected_indices = I.flatten().tolist()
+                for cluster_idx in range(num_clusters):
+                    cluster_chunk_indices = I[cluster_idx]
+                    for idx in cluster_chunk_indices:
+                        selected_indices.append(idx)
             except Exception as e:
                 raise RuntimeError(f"Error in FAISS KMeans clustering: {e}")
         else:
@@ -215,35 +225,28 @@ class CriticalVectors:
             except Exception as e:
                 raise RuntimeError(f"Error in KMeans clustering: {e}")
 
-            # Find the closest N chunks to each cluster centroid with diversity
             try:
-                distances = pairwise_distances(centroids, embeddings, metric='euclidean')
-                selected_indices = []
-                for i in range(num_clusters):
-                    cluster_indices = np.where(labels == i)[0]
-                    cluster_embeddings = embeddings[cluster_indices]
+                for cluster_idx in range(num_clusters):
+                    cluster_indices = np.where(labels == cluster_idx)[0]
                     if len(cluster_indices) == 0:
                         continue
-                    # Calculate distances within the cluster
-                    cluster_distances = distances[i][cluster_indices]
-                    # Sort indices by distance (closest first)
-                    sorted_cluster_indices = cluster_indices[np.argsort(cluster_distances)]
-                    # Select the closest chunk
-                    selected = [sorted_cluster_indices[0]]
-                    # Select additional chunks based on maximum distance from already selected
-                    for _ in range(1, self.chunks_per_cluster):
-                        if len(selected) >= len(sorted_cluster_indices):
-                            break
-                        remaining = sorted_cluster_indices[sorted_cluster_indices != selected[0]]
-                        if len(selected) == 1:
-                            next_idx = remaining[-1]
-                        else:
-                            # Compute distance from the last selected chunk
-                            last_selected_embedding = embeddings[selected[-1]].reshape(1, -1)
-                            remaining_embeddings = embeddings[remaining]
-                            dists = pairwise_distances(last_selected_embedding, remaining_embeddings, metric='euclidean').flatten()
-                            next_idx = remaining[np.argmax(dists)]
-                        selected.append(next_idx)
+                    cluster_embeddings = embeddings[cluster_indices]
+                    centroid = centroids[cluster_idx].reshape(1, -1)
+                    # Compute distances to centroid
+                    distances = pairwise_distances(cluster_embeddings, centroid, metric='euclidean').flatten()
+                    # Sort indices by distance to centroid
+                    sorted_indices = cluster_indices[np.argsort(distances)]
+                    # Select the closest chunk first
+                    selected = [sorted_indices[0]]
+                    # Select additional chunks at extremes
+                    if self.chunks_per_cluster > 1 and len(sorted_indices) > 1:
+                        selected.append(sorted_indices[-1])
+                    # If more chunks are needed
+                    while len(selected) < self.chunks_per_cluster and len(sorted_indices) > len(selected):
+                        # Select the next farthest chunk
+                        next_idx = sorted_indices[-len(selected)-1]
+                        if next_idx not in selected:
+                            selected.append(next_idx)
                     selected_indices.extend(selected)
             except Exception as e:
                 raise RuntimeError(f"Error selecting chunks: {e}")
@@ -265,44 +268,38 @@ class CriticalVectors:
         Returns:
         - List[str]: Selected chunks.
         """
+        selected_indices = []
         try:
             clustering = AgglomerativeClustering(n_clusters=num_clusters)
             labels = clustering.fit_predict(embeddings)
         except Exception as e:
             raise RuntimeError(f"Error in Agglomerative Clustering: {e}")
 
-        selected_indices = []
-        for label in np.unique(labels):
-            cluster_indices = np.where(labels == label)[0]
-            cluster_embeddings = embeddings[cluster_indices]
-            if len(cluster_indices) == 0:
-                continue
-            centroid = np.mean(cluster_embeddings, axis=0).reshape(1, -1)
-
-            # Compute distances to centroid
-            try:
+        try:
+            for cluster_idx in range(num_clusters):
+                cluster_indices = np.where(labels == cluster_idx)[0]
+                if len(cluster_indices) == 0:
+                    continue
+                cluster_embeddings = embeddings[cluster_indices]
+                centroid = np.mean(cluster_embeddings, axis=0).reshape(1, -1)
+                # Compute distances to centroid
                 distances = pairwise_distances(cluster_embeddings, centroid, metric='euclidean').flatten()
+                # Sort indices by distance to centroid
                 sorted_indices = cluster_indices[np.argsort(distances)]
                 # Select the closest chunk first
                 selected = [sorted_indices[0]]
-                # Select additional chunks based on maximum distance from already selected
-                for _ in range(1, self.chunks_per_cluster):
-                    if len(selected) >= len(sorted_indices):
-                        break
-                    remaining = sorted_indices[np.isin(sorted_indices, selected, invert=True)]
-                    if len(selected) == 1:
-                        next_idx = remaining[-1]
-                    else:
-                        last_selected_embedding = embeddings[selected[-1]].reshape(1, -1)
-                        remaining_embeddings = embeddings[remaining]
-                        dists = pairwise_distances(last_selected_embedding, remaining_embeddings, metric='euclidean').flatten()
-                        if len(dists) == 0:
-                            break
-                        next_idx = remaining[np.argmax(dists)]
-                    selected.append(next_idx)
+                # Select additional chunks at extremes
+                if self.chunks_per_cluster > 1 and len(sorted_indices) > 1:
+                    selected.append(sorted_indices[-1])
+                # If more chunks are needed
+                while len(selected) < self.chunks_per_cluster and len(sorted_indices) > len(selected):
+                    # Select the next farthest chunk
+                    next_idx = sorted_indices[-len(selected)-1]
+                    if next_idx not in selected:
+                        selected.append(next_idx)
                 selected_indices.extend(selected)
-            except Exception as e:
-                raise RuntimeError(f"Error selecting chunks: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Error selecting chunks: {e}")
 
         # Remove duplicate indices
         selected_indices = list(dict.fromkeys(selected_indices))
@@ -344,25 +341,27 @@ class CriticalVectors:
 # Example usage:
 
 if __name__ == "__main__":
-
-    # Instantiate the selector
+    # Instantiate the selector with configurable chunks_per_cluster parameter
     try:
         selector = CriticalVectors(
-            strategy='agglomerative',
+            strategy='kmeans',
             num_clusters='auto',
             chunk_size=10000,
+            chunks_per_cluster=1,  # Set the desired number of chunks per cluster here
             split_method='sentences',
-            max_tokens_per_chunk=1000,  # Adjust as needed
-            chunks_per_cluster=1,
-            use_faiss=False  # Enable FAISS
+            max_tokens_per_chunk=3000,  # Adjust as needed
+            use_faiss=True  # Enable FAISS if desired
         )
         test_str = demo_string()
-        # Get the most relevant chunks using the improved method
+        # Get the most relevant and diverse chunks using the improved method
         relevant_chunks, first_part, last_part = selector.get_relevant_chunks(test_str)
         res = ollama.chat(model=desiredModel, messages=[
             {
                 'role': 'user',
-                'content': "[INST]<<SYS>>" + "RESPOND WITH A `consolidated plot summary` OF THE [context]" + f"\n\n\[context] beginning:\n{first_part} \n" + "\n".join(relevant_chunks) + f"\n\nlast part:\n{last_part}\n[/context]<</SYS>> RESPOND WITH A `consolidated plot summary` OF THE [context][/INST]",
+                'content': "[INST]<<SYS>>" + "RESPOND WITH A `consolidated plot summary` OF THE [context]" +
+                           f"\n\n\[context] beginning:\n{first_part} \n" +
+                           "\n".join(relevant_chunks) +
+                           f"\n\nlast part:\n{last_part}\n[/context]<</SYS>> RESPOND WITH A `consolidated plot summary` OF THE [context][/INST]",
             },
         ])
         if res['message']:
@@ -370,3 +369,50 @@ if __name__ == "__main__":
             exit()
     except Exception as e:
         print(f"An error occurred: {e}")
+
+"""
+WARNING clustering 64 points to 8 centroids: please provide at least 312 training points
+Here is a consolidated plot summary of the story:
+
+**The Story Begins**
+
+Jonathan Harker, a young solicitor, travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, the Count is a vampire.
+
+**Harker's Encounter with the Vampire**
+
+Upon arriving at Castle Dracula, Harker discovers that he has been invited to dinner, where he meets the Count. The two men engage in conversation, and Harker soon realizes that the Count is a supernatural being who feeds on human blood.
+
+**Escape from Transylvania**
+
+Harker barely escapes from the castle with his life, only to find himself stranded in England after losing his ticket and identification.
+
+**The Infection of Mina**
+
+Meanwhile, in England, Mina Murray becomes engaged to Harker's friend, Jonathan Harker. Unbeknownst to her, she has been bitten by a vampire (later revealed to be Renfield) and is slowly becoming infected with the curse.
+
+**Quincey Morris' Arrival**
+
+The story then shifts to Texas, where Quincey Morris, an American adventurer, joins forces with Harker's friends to search for him. They soon discover that Mina has been bitten by a vampire.
+
+**The Journey to Transylvania**
+
+The group sets out on a perilous journey to Transylvania to find the Count and save Mina from his curse.
+
+**The Confrontation at the Castle**
+
+Upon arriving at Castle Dracula, the group discovers that Harker had discovered the true nature of the Count and had attempted to stop him. However, they arrive too late, and Harker is killed by the vampire's hand.
+
+**The Final Battle**
+
+In a climactic confrontation, Jonathan Harker and Quincey Morris attempt to destroy the Count, but he proves to be a formidable foe. Just as all hope seems lost, the two men are able to defeat him with the help of stakes and garlic.
+
+**The Aftermath**
+
+After defeating the Count, the group mourns the loss of their friend Quincey Morris, who has been fatally wounded during the battle. As they prepare to leave Transylvania, they realize that the curse has been broken, and Mina is finally free from its grasp.
+
+**The Epilogue**
+
+Seven years later, the story jumps forward in time, where we find out that Harker's death was not in vain. The group has since reunited with their loved ones, including Mina, who has given birth to a healthy child. They celebrate the boy's birthday on the same day as Quincey Morris' death, marking a new beginning for them.
+
+Overall, the story is a thrilling tale of friendship, sacrifice, and the ultimate defeat of evil forces that threaten humanity.
+"""
