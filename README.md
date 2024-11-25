@@ -81,6 +81,7 @@ The `CriticalVectors` class is initialized with several parameters:
 - **chunk_size** (`int`): The size of each text chunk in characters.
 - **strategy** (`str`): The clustering strategy to use. Options include `'kmeans'`,  and `'agglomerative'`.
 - **num_clusters** (`int` or `'auto'`): The number of clusters to form. If set to `'auto'`, the number of clusters is determined automatically based on the data.
+- **chunks_per_cluster** (int): The number of chunks to select from each cluster. This parameter controls the diversity and number of chunks selected.
 - **embeddings_model**: The embeddings model to use for generating vector representations of text chunks. Defaults to `OllamaEmbeddings` with the `'nomic-embed-text'` model.
 - **split_method** (`str`): The method to split text into chunks. Options are `'sentences'` or `'paragraphs'`.
 - **max_tokens_per_chunk** (`int`): The maximum number of tokens allowed per chunk when splitting the text.
