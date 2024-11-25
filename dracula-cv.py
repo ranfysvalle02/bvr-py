@@ -20,7 +20,7 @@ def demo_string():
 # Define the CriticalVectors class
 class CriticalVectors:
     """
-    A robust class to select the most relevant chunks from a text using various strategies,
+    A robust class to select the most relevant and semantically diverse chunks from a text using various strategies.
     """
 
     def __init__(
@@ -28,6 +28,7 @@ class CriticalVectors:
         chunk_size=500,
         strategy='kmeans',
         num_clusters='auto',
+        chunks_per_cluster=1,
         embeddings_model=None,
         split_method='sentences',
         max_tokens_per_chunk=512,
@@ -40,6 +41,7 @@ class CriticalVectors:
         - chunk_size (int): Size of each text chunk in characters.
         - strategy (str): Strategy to use for selecting chunks ('kmeans', 'agglomerative').
         - num_clusters (int or 'auto'): Number of clusters (used in clustering strategies). If 'auto', automatically determine the number of clusters.
+        - chunks_per_cluster (int): Number of chunks to select per cluster.
         - embeddings_model: Embedding model to use. If None, uses OllamaEmbeddings with 'nomic-embed-text' model.
         - split_method (str): Method to split text ('sentences', 'paragraphs').
         - max_tokens_per_chunk (int): Maximum number of tokens per chunk when splitting.
@@ -61,6 +63,11 @@ class CriticalVectors:
             raise ValueError("num_clusters must be a positive integer or 'auto'.")
         self.num_clusters = num_clusters
 
+        # Validate chunks_per_cluster
+        if not isinstance(chunks_per_cluster, int) or chunks_per_cluster <= 0:
+            raise ValueError("chunks_per_cluster must be a positive integer.")
+        self.chunks_per_cluster = chunks_per_cluster
+
         # Set embeddings_model
         if embeddings_model is None:
             self.embeddings_model = OllamaEmbeddings(model="nomic-embed-text")
@@ -73,8 +80,6 @@ class CriticalVectors:
 
         # Set FAISS usage
         self.use_faiss = use_faiss
-
-    
 
     def split_text(self, text, method='sentences', max_tokens_per_chunk=512):
         """
@@ -93,7 +98,6 @@ class CriticalVectors:
             raise ValueError("text must be a non-empty string.")
 
         if method == 'sentences':
-            nltk.download('punkt', quiet=True)
             sentences = sent_tokenize(text)
             chunks = []
             current_chunk = ''
@@ -105,7 +109,8 @@ class CriticalVectors:
                     current_chunk += ' ' + sentence
                     current_tokens += num_tokens
                 else:
-                    chunks.append(current_chunk.strip())
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
                     current_chunk = sentence
                     current_tokens = num_tokens
             if current_chunk:
@@ -119,7 +124,8 @@ class CriticalVectors:
                 if len(current_chunk) + len(para) <= self.chunk_size:
                     current_chunk += '\n\n' + para
                 else:
-                    chunks.append(current_chunk.strip())
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
                     current_chunk = para
             if current_chunk:
                 chunks.append(current_chunk.strip())
@@ -150,7 +156,7 @@ class CriticalVectors:
 
     def select_chunks(self, chunks, embeddings):
         """
-        Selects the most relevant chunks based on the specified strategy.
+        Selects the most relevant and semantically diverse chunks based on the specified strategy.
 
         Parameters:
         - chunks (List[str]): List of text chunks.
@@ -178,7 +184,7 @@ class CriticalVectors:
 
     def _select_chunks_kmeans(self, chunks, embeddings, num_clusters):
         """
-        Selects chunks using KMeans clustering.
+        Selects chunks using KMeans clustering with semantic diversity.
 
         Parameters:
         - chunks (List[str]): List of text chunks.
@@ -193,38 +199,63 @@ class CriticalVectors:
                 d = embeddings.shape[1]
                 kmeans = faiss.Kmeans(d, num_clusters, niter=20, verbose=False)
                 kmeans.train(embeddings)
-                D, I = kmeans.index.search(embeddings, 1)
-                labels = I.flatten()
+                centroids = kmeans.centroids
+                index = faiss.IndexFlatL2(d)
+                index.add(embeddings)
+                D, I = index.search(centroids, self.chunks_per_cluster)
+                selected_indices = I.flatten().tolist()
             except Exception as e:
                 raise RuntimeError(f"Error in FAISS KMeans clustering: {e}")
         else:
             try:
-                from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=num_clusters, random_state=1337)
                 kmeans.fit(embeddings)
                 labels = kmeans.labels_
+                centroids = kmeans.cluster_centers_
             except Exception as e:
                 raise RuntimeError(f"Error in KMeans clustering: {e}")
 
-        # Find the closest chunk to each cluster centroid
-        try:
-            if self.use_faiss:
-                centroids = kmeans.centroids
-                index = faiss.IndexFlatL2(embeddings.shape[1])
-                index.add(embeddings)
-                D, closest_indices = index.search(centroids, 1)
-                closest_indices = closest_indices.flatten()
-            else:
-                from sklearn.metrics import pairwise_distances_argmin_min
-                closest_indices, _ = pairwise_distances_argmin_min(kmeans.cluster_centers_, embeddings)
-            selected_chunks = [chunks[idx] for idx in closest_indices]
-            return selected_chunks
-        except Exception as e:
-            raise RuntimeError(f"Error selecting chunks: {e}")
+            # Find the closest N chunks to each cluster centroid with diversity
+            try:
+                distances = pairwise_distances(centroids, embeddings, metric='euclidean')
+                selected_indices = []
+                for i in range(num_clusters):
+                    cluster_indices = np.where(labels == i)[0]
+                    cluster_embeddings = embeddings[cluster_indices]
+                    if len(cluster_indices) == 0:
+                        continue
+                    # Calculate distances within the cluster
+                    cluster_distances = distances[i][cluster_indices]
+                    # Sort indices by distance (closest first)
+                    sorted_cluster_indices = cluster_indices[np.argsort(cluster_distances)]
+                    # Select the closest chunk
+                    selected = [sorted_cluster_indices[0]]
+                    # Select additional chunks based on maximum distance from already selected
+                    for _ in range(1, self.chunks_per_cluster):
+                        if len(selected) >= len(sorted_cluster_indices):
+                            break
+                        remaining = sorted_cluster_indices[sorted_cluster_indices != selected[0]]
+                        if len(selected) == 1:
+                            next_idx = remaining[-1]
+                        else:
+                            # Compute distance from the last selected chunk
+                            last_selected_embedding = embeddings[selected[-1]].reshape(1, -1)
+                            remaining_embeddings = embeddings[remaining]
+                            dists = pairwise_distances(last_selected_embedding, remaining_embeddings, metric='euclidean').flatten()
+                            next_idx = remaining[np.argmax(dists)]
+                        selected.append(next_idx)
+                    selected_indices.extend(selected)
+            except Exception as e:
+                raise RuntimeError(f"Error selecting chunks: {e}")
+
+        # Remove duplicate indices
+        selected_indices = list(dict.fromkeys(selected_indices))
+        selected_chunks = [chunks[idx] for idx in selected_indices]
+        return selected_chunks
 
     def _select_chunks_agglomerative(self, chunks, embeddings, num_clusters):
         """
-        Selects chunks using Agglomerative Clustering.
+        Selects chunks using Agglomerative Clustering with semantic diversity.
 
         Parameters:
         - chunks (List[str]): List of text chunks.
@@ -235,7 +266,6 @@ class CriticalVectors:
         - List[str]: Selected chunks.
         """
         try:
-            from sklearn.cluster import AgglomerativeClustering
             clustering = AgglomerativeClustering(n_clusters=num_clusters)
             labels = clustering.fit_predict(embeddings)
         except Exception as e:
@@ -245,31 +275,49 @@ class CriticalVectors:
         for label in np.unique(labels):
             cluster_indices = np.where(labels == label)[0]
             cluster_embeddings = embeddings[cluster_indices]
-            centroid = np.mean(cluster_embeddings, axis=0).astype('float32').reshape(1, -1)
-            # Find the chunk closest to the centroid
-            if self.use_faiss:
-                index = faiss.IndexFlatL2(embeddings.shape[1])
-                index.add(cluster_embeddings)
-                D, I = index.search(centroid, 1)
-                closest_index_in_cluster = I[0][0]
-            else:
-                from sklearn.metrics import pairwise_distances_argmin_min
-                closest_index_in_cluster, _ = pairwise_distances_argmin_min(centroid, cluster_embeddings)
-                closest_index_in_cluster = closest_index_in_cluster[0]
-            selected_indices.append(cluster_indices[closest_index_in_cluster])
+            if len(cluster_indices) == 0:
+                continue
+            centroid = np.mean(cluster_embeddings, axis=0).reshape(1, -1)
 
+            # Compute distances to centroid
+            try:
+                distances = pairwise_distances(cluster_embeddings, centroid, metric='euclidean').flatten()
+                sorted_indices = cluster_indices[np.argsort(distances)]
+                # Select the closest chunk first
+                selected = [sorted_indices[0]]
+                # Select additional chunks based on maximum distance from already selected
+                for _ in range(1, self.chunks_per_cluster):
+                    if len(selected) >= len(sorted_indices):
+                        break
+                    remaining = sorted_indices[np.isin(sorted_indices, selected, invert=True)]
+                    if len(selected) == 1:
+                        next_idx = remaining[-1]
+                    else:
+                        last_selected_embedding = embeddings[selected[-1]].reshape(1, -1)
+                        remaining_embeddings = embeddings[remaining]
+                        dists = pairwise_distances(last_selected_embedding, remaining_embeddings, metric='euclidean').flatten()
+                        if len(dists) == 0:
+                            break
+                        next_idx = remaining[np.argmax(dists)]
+                    selected.append(next_idx)
+                selected_indices.extend(selected)
+            except Exception as e:
+                raise RuntimeError(f"Error selecting chunks: {e}")
+
+        # Remove duplicate indices
+        selected_indices = list(dict.fromkeys(selected_indices))
         selected_chunks = [chunks[idx] for idx in selected_indices]
         return selected_chunks
 
     def get_relevant_chunks(self, text):
         """
-        Gets the most relevant chunks from the text.
+        Gets the most relevant and semantically diverse chunks from the text.
 
         Parameters:
         - text (str): The input text.
 
         Returns:
-        - List[str]: Selected chunks.
+        - List[str], str, str: Selected chunks, first part, and last part.
         """
         # Split the text into chunks
         chunks = self.split_text(
@@ -289,7 +337,7 @@ class CriticalVectors:
         # Compute embeddings for each chunk
         embeddings = self.compute_embeddings(chunks)
 
-        # Select the most relevant chunks
+        # Select the most relevant and diverse chunks
         selected_chunks = self.select_chunks(chunks, embeddings)
         return selected_chunks, first_part, last_part
 
@@ -305,6 +353,7 @@ if __name__ == "__main__":
             chunk_size=10000,
             split_method='sentences',
             max_tokens_per_chunk=1000,  # Adjust as needed
+            chunks_per_cluster=1,
             use_faiss=False  # Enable FAISS
         )
         test_str = demo_string()
