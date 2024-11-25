@@ -8,10 +8,11 @@ import faiss
 from langchain_ollama import OllamaEmbeddings
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
-import requests
 import ollama
-from sklearn.metrics import pairwise_distances_argmin_min
 from itertools import product
+
+from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.metrics import pairwise_distances
 
 # Ensure NLTK punkt tokenizer is downloaded
 nltk.download('punkt', quiet=True)
@@ -28,7 +29,7 @@ def demo_string():
 # Define the CriticalVectors class
 class CriticalVectors:
     """
-    A robust class to select the most relevant chunks from a text using various strategies,
+    A robust class to select the most relevant and semantically diverse chunks from a text using various strategies.
     """
 
     def __init__(
@@ -36,6 +37,7 @@ class CriticalVectors:
         chunk_size=500,
         strategy='kmeans',
         num_clusters='auto',
+        chunks_per_cluster=1,
         embeddings_model=None,
         split_method='sentences',
         max_tokens_per_chunk=512,
@@ -48,6 +50,7 @@ class CriticalVectors:
         - chunk_size (int): Size of each text chunk in characters.
         - strategy (str): Strategy to use for selecting chunks ('kmeans', 'agglomerative').
         - num_clusters (int or 'auto'): Number of clusters (used in clustering strategies). If 'auto', automatically determine the number of clusters.
+        - chunks_per_cluster (int): Number of chunks to select per cluster.
         - embeddings_model: Embedding model to use. If None, uses OllamaEmbeddings with 'nomic-embed-text' model.
         - split_method (str): Method to split text ('sentences', 'paragraphs').
         - max_tokens_per_chunk (int): Maximum number of tokens per chunk when splitting.
@@ -69,6 +72,11 @@ class CriticalVectors:
             raise ValueError("num_clusters must be a positive integer or 'auto'.")
         self.num_clusters = num_clusters
 
+        # Validate chunks_per_cluster
+        if not isinstance(chunks_per_cluster, int) or chunks_per_cluster <= 0:
+            raise ValueError("chunks_per_cluster must be a positive integer.")
+        self.chunks_per_cluster = chunks_per_cluster
+
         # Set embeddings_model
         if embeddings_model is None:
             self.embeddings_model = OllamaEmbeddings(model="nomic-embed-text")
@@ -81,8 +89,6 @@ class CriticalVectors:
 
         # Set FAISS usage
         self.use_faiss = use_faiss
-
-    
 
     def split_text(self, text, method='sentences', max_tokens_per_chunk=512):
         """
@@ -101,7 +107,6 @@ class CriticalVectors:
             raise ValueError("text must be a non-empty string.")
 
         if method == 'sentences':
-            nltk.download('punkt', quiet=True)
             sentences = sent_tokenize(text)
             chunks = []
             current_chunk = ''
@@ -113,7 +118,8 @@ class CriticalVectors:
                     current_chunk += ' ' + sentence
                     current_tokens += num_tokens
                 else:
-                    chunks.append(current_chunk.strip())
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
                     current_chunk = sentence
                     current_tokens = num_tokens
             if current_chunk:
@@ -127,7 +133,8 @@ class CriticalVectors:
                 if len(current_chunk) + len(para) <= self.chunk_size:
                     current_chunk += '\n\n' + para
                 else:
-                    chunks.append(current_chunk.strip())
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
                     current_chunk = para
             if current_chunk:
                 chunks.append(current_chunk.strip())
@@ -158,7 +165,7 @@ class CriticalVectors:
 
     def select_chunks(self, chunks, embeddings):
         """
-        Selects the most relevant chunks based on the specified strategy.
+        Selects the most relevant and semantically diverse chunks based on the specified strategy.
 
         Parameters:
         - chunks (List[str]): List of text chunks.
@@ -186,7 +193,7 @@ class CriticalVectors:
 
     def _select_chunks_kmeans(self, chunks, embeddings, num_clusters):
         """
-        Selects chunks using KMeans clustering.
+        Selects chunks using KMeans clustering with semantic diversity.
 
         Parameters:
         - chunks (List[str]): List of text chunks.
@@ -196,43 +203,66 @@ class CriticalVectors:
         Returns:
         - List[str]: Selected chunks.
         """
+        selected_indices = []
+
         if self.use_faiss:
             try:
                 d = embeddings.shape[1]
                 kmeans = faiss.Kmeans(d, num_clusters, niter=20, verbose=False)
                 kmeans.train(embeddings)
-                D, I = kmeans.index.search(embeddings, 1)
-                labels = I.flatten()
+                centroids = kmeans.centroids
+                index = faiss.IndexFlatL2(d)
+                index.add(embeddings)
+                D, I = index.search(centroids, self.chunks_per_cluster)
+                for cluster_idx in range(num_clusters):
+                    cluster_chunk_indices = I[cluster_idx]
+                    for idx in cluster_chunk_indices:
+                        selected_indices.append(idx)
             except Exception as e:
                 raise RuntimeError(f"Error in FAISS KMeans clustering: {e}")
         else:
             try:
-                from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=num_clusters, random_state=1337)
                 kmeans.fit(embeddings)
                 labels = kmeans.labels_
+                centroids = kmeans.cluster_centers_
             except Exception as e:
                 raise RuntimeError(f"Error in KMeans clustering: {e}")
 
-        # Find the closest chunk to each cluster centroid
-        try:
-            if self.use_faiss:
-                centroids = kmeans.centroids
-                index = faiss.IndexFlatL2(embeddings.shape[1])
-                index.add(embeddings)
-                D, closest_indices = index.search(centroids, 1)
-                closest_indices = closest_indices.flatten()
-            else:
-                from sklearn.metrics import pairwise_distances_argmin_min
-                closest_indices, _ = pairwise_distances_argmin_min(kmeans.cluster_centers_, embeddings)
-            selected_chunks = [chunks[idx] for idx in closest_indices]
-            return selected_chunks
-        except Exception as e:
-            raise RuntimeError(f"Error selecting chunks: {e}")
+            try:
+                for cluster_idx in range(num_clusters):
+                    cluster_indices = np.where(labels == cluster_idx)[0]
+                    if len(cluster_indices) == 0:
+                        continue
+                    cluster_embeddings = embeddings[cluster_indices]
+                    centroid = centroids[cluster_idx].reshape(1, -1)
+                    # Compute distances to centroid
+                    distances = pairwise_distances(cluster_embeddings, centroid, metric='euclidean').flatten()
+                    # Sort indices by distance to centroid
+                    sorted_indices = cluster_indices[np.argsort(distances)]
+                    # Select the closest chunk first
+                    selected = [sorted_indices[0]]
+                    # Select additional chunks at extremes
+                    if self.chunks_per_cluster > 1 and len(sorted_indices) > 1:
+                        selected.append(sorted_indices[-1])
+                    # If more chunks are needed
+                    while len(selected) < self.chunks_per_cluster and len(sorted_indices) > len(selected):
+                        # Select the next farthest chunk
+                        next_idx = sorted_indices[-len(selected)-1]
+                        if next_idx not in selected:
+                            selected.append(next_idx)
+                    selected_indices.extend(selected)
+            except Exception as e:
+                raise RuntimeError(f"Error selecting chunks: {e}")
+
+        # Remove duplicate indices
+        selected_indices = list(dict.fromkeys(selected_indices))
+        selected_chunks = [chunks[idx] for idx in selected_indices]
+        return selected_chunks
 
     def _select_chunks_agglomerative(self, chunks, embeddings, num_clusters):
         """
-        Selects chunks using Agglomerative Clustering.
+        Selects chunks using Agglomerative Clustering with semantic diversity.
 
         Parameters:
         - chunks (List[str]): List of text chunks.
@@ -242,42 +272,53 @@ class CriticalVectors:
         Returns:
         - List[str]: Selected chunks.
         """
+        selected_indices = []
         try:
-            from sklearn.cluster import AgglomerativeClustering
             clustering = AgglomerativeClustering(n_clusters=num_clusters)
             labels = clustering.fit_predict(embeddings)
         except Exception as e:
             raise RuntimeError(f"Error in Agglomerative Clustering: {e}")
 
-        selected_indices = []
-        for label in np.unique(labels):
-            cluster_indices = np.where(labels == label)[0]
-            cluster_embeddings = embeddings[cluster_indices]
-            centroid = np.mean(cluster_embeddings, axis=0).astype('float32').reshape(1, -1)
-            # Find the chunk closest to the centroid
-            if self.use_faiss:
-                index = faiss.IndexFlatL2(embeddings.shape[1])
-                index.add(cluster_embeddings)
-                D, I = index.search(centroid, 1)
-                closest_index_in_cluster = I[0][0]
-            else:
-                from sklearn.metrics import pairwise_distances_argmin_min
-                closest_index_in_cluster, _ = pairwise_distances_argmin_min(centroid, cluster_embeddings)
-                closest_index_in_cluster = closest_index_in_cluster[0]
-            selected_indices.append(cluster_indices[closest_index_in_cluster])
+        try:
+            for cluster_idx in range(num_clusters):
+                cluster_indices = np.where(labels == cluster_idx)[0]
+                if len(cluster_indices) == 0:
+                    continue
+                cluster_embeddings = embeddings[cluster_indices]
+                centroid = np.mean(cluster_embeddings, axis=0).reshape(1, -1)
+                # Compute distances to centroid
+                distances = pairwise_distances(cluster_embeddings, centroid, metric='euclidean').flatten()
+                # Sort indices by distance to centroid
+                sorted_indices = cluster_indices[np.argsort(distances)]
+                # Select the closest chunk first
+                selected = [sorted_indices[0]]
+                # Select additional chunks at extremes
+                if self.chunks_per_cluster > 1 and len(sorted_indices) > 1:
+                    selected.append(sorted_indices[-1])
+                # If more chunks are needed
+                while len(selected) < self.chunks_per_cluster and len(sorted_indices) > len(selected):
+                    # Select the next farthest chunk
+                    next_idx = sorted_indices[-len(selected)-1]
+                    if next_idx not in selected:
+                        selected.append(next_idx)
+                selected_indices.extend(selected)
+        except Exception as e:
+            raise RuntimeError(f"Error selecting chunks: {e}")
 
+        # Remove duplicate indices
+        selected_indices = list(dict.fromkeys(selected_indices))
         selected_chunks = [chunks[idx] for idx in selected_indices]
         return selected_chunks
 
     def get_relevant_chunks(self, text):
         """
-        Gets the most relevant chunks from the text.
+        Gets the most relevant and semantically diverse chunks from the text.
 
         Parameters:
         - text (str): The input text.
 
         Returns:
-        - List[str]: Selected chunks.
+        - List[str], str, str: Selected chunks, first part, and last part.
         """
         # Split the text into chunks
         chunks = self.split_text(
@@ -297,7 +338,7 @@ class CriticalVectors:
         # Compute embeddings for each chunk
         embeddings = self.compute_embeddings(chunks)
 
-        # Select the most relevant chunks
+        # Select the most relevant and diverse chunks
         selected_chunks = self.select_chunks(chunks, embeddings)
         return selected_chunks, first_part, last_part
 
@@ -312,6 +353,7 @@ def run_test(strategy, split_method, chunk_size=10000, max_tokens_per_chunk=1000
             chunk_size=chunk_size,
             split_method=split_method,
             max_tokens_per_chunk=max_tokens_per_chunk,
+            chunks_per_cluster=1,
             use_faiss=use_faiss
         )
 
@@ -374,7 +416,7 @@ for result in results:
 
 
 """
-2024-11-23 0X:0X:0X,832	INFO worker.py:1777 -- Started a local Ray instance. View the dashboard at 127.0.0.1:8266 
+2024-11-24 0X:0X:0X,758	INFO worker.py:1777 -- Started a local Ray instance. View the dashboard at 127.0.0.1:8265 
 Test Configurations:
 Strategy: agglomerative, Split Method: sentences
 Strategy: agglomerative, Split Method: paragraphs
@@ -386,90 +428,88 @@ Strategy: agglomerative, Split Method: sentences
 Summary:
 Here is a consolidated plot summary of the context:
 
-**Main Plot**
+**Summary**
 
-The story revolves around the struggles of Jonathan and Mina Harker, a young couple who are trying to deal with supernatural forces that have entered their lives. The narrative unfolds through multiple journals and perspectives, including those of John Harker (Jonathan's brother), Abraham Van Helsing (a Dutch doctor and expert in the supernatural), Quincey Morris (an American friend of Jonathan's), Arthur Holmwood (Quincey's friend and suitor), and Mina herself.
+The story revolves around Jonathan Harker, a solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to him, he is walking into a trap set by the vampire.
 
-The story begins with John Harker traveling to Transylvania to finalize the sale of a property to Count Dracula, unaware of the horror that awaits him. Upon his return, he confides in his brother and wife about his terrifying experiences, including the death of his servant, Renfield.
+Upon his return, Harker's wife Mina becomes increasingly concerned as her husband becomes distant and evasive about his experiences in Transylvania. It is revealed that Jonathan has become entangled in a world of supernatural horrors and that he has been forced to flee for his life.
 
-As the story progresses, it becomes clear that Mina is also being stalked by Dracula, who has become obsessed with her. The group of friends, led by Van Helsing, band together to stop Dracula's evil plans and save Mina from his clutches.
+As the story unfolds, it becomes clear that Count Dracula has attached himself to Mina's family through their close relationships with Harker and his friends. The vampire seeks to claim Mina as his own, and the living must band together to stop him.
 
-**Themes and Tone**
+**Main Plot Points**
 
-Throughout the narrative, the tone shifts between horror, suspense, and a sense of inevitability. The theme of the struggle between good and evil is a dominant one, with the characters facing off against the forces of darkness embodied by Dracula.
+* Jonathan Harker visits Transylvania to finalize the sale of a property, but he soon discovers that the property is inhabited by Count Dracula.
+* Dracula attacks Harker and sends him away in a coffin, which he believes will keep him safe.
+* Unbeknownst to Harker, his wife Mina becomes increasingly entangled in the supernatural world as her husband's experiences are shared with her.
+* As Mina learns more about the vampire, she becomes increasingly concerned for her family's safety and well-being.
+* The story shifts focus to a group of men (Van Helsing, Quincey Morris, Arthur Holmwood, and John Seward) who band together to stop Dracula and save Mina from his clutches.
 
-The story also explores themes of love, loyalty, and sacrifice, particularly in the relationships between Mina and her friends, as well as Jonathan's devotion to his wife.
+**Key Characters**
 
-**Key Events**
+* Count Dracula: A vampire with supernatural powers
+* Jonathan Harker: A solicitor who travels to Transylvania and becomes entangled in the vampire's world.
+* Mina Harker (née Murray): Jonathan's wife, who becomes increasingly concerned about her husband's experiences and eventually becomes a key player in the battle against Dracula.
+* Van Helsing: A wise and experienced professor who helps the group understand the supernatural forces at play and leads the charge against Dracula.
 
-* John Harker travels to Transylvania and discovers the horrors that await him.
-* Renfield is killed by Dracula, and his subsequent madness serves as a warning sign for the group.
-* Mina is attacked by Dracula, but is saved by Van Helsing and Quincey.
-* The group of friends works together to uncover the secrets of Dracula's powers and weaknesses.
-* Jonathan becomes increasingly obsessed with stopping Dracula, despite Mina's wishes that he keep her safe.
+**Themes**
 
-**Climax and Conclusion**
-
-The climax of the story revolves around the final confrontation between Van Helsing and Dracula. In the end, it is Van Helsing who delivers the fatal blow to the vampire, saving Mina from his grasp. The narrative concludes with a sense of relief and closure, as the surviving characters come to terms with the trauma they have experienced.
-
-Ultimately, the story raises questions about the nature of evil and the power of human love and friendship in the face of darkness and despair.
+* The struggle between good and evil
+* The power of love and relationships to overcome even the most formidable foes
+* The dangers of underestimating or ignoring the supernatural
 
 
 ---
 Strategy: agglomerative, Split Method: paragraphs
 Summary:
-Here is a consolidated plot summary:
+Here is a consolidated plot summary of the story:
 
-The story begins with Jonathan Harker's journey to Transylvania, where he meets Count Dracula and discovers his true nature. Meanwhile, back in England, Harker's fiancée, Mina, becomes ill and is hospitalized. Dr. Seward, a friend of Harker's, takes over as Mina's doctor.
+The story begins with Jonathan Harker, a solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he is entering a world of horror and terror. Upon his return to England, Harker tells his fiancée, Mina, about his experiences in Transylvania.
 
-As the story unfolds, it becomes clear that Dracula has arrived in England, spreading vampirism and terrorizing the living. Dr. Seward, along with his assistant Quincey Morris and the solicitor Arthur Holmwood, who is seeking revenge for his sister's death at Dracula's hands, band together to stop him.
+As Mina becomes increasingly concerned about her future with Lucy Westenra, one of her friends who has fallen under the spell of Count Dracula, a group of men - Abraham Van Helsing, Quincey Morris, Arthur Holmwood, and John Seward - come together to warn Mina about the dangers of vampires.
 
-The group discovers that Mina has become a vampire herself and is being held by Dracula. They also learn about Dracula's powers and weaknesses, including his aversion to garlic, holy water, and sunlight. Van Helsing, a Dutch doctor who specializes in supernatural diseases, joins the group and helps them develop a plan to defeat Dracula.
+Meanwhile, in England, a series of strange events occur, including Lucy's transformation into a vampire. The men band together to try and save Lucy, but ultimately fail. They then turn their attention to Count Dracula himself, who is hiding in England.
 
-The story culminates in a final confrontation between the group and Dracula, with the help of Quincey's death by vampire bite (which allows him to fight back against his undead state), the powers of garlic and holy water, and Van Helsing's knowledge of supernatural lore. In the end, Dracula is defeated, and Mina is restored to her human form.
+As the story progresses, it becomes clear that Dracula has arrived in England, preying on the innocent and spreading terror throughout the land. The men work together to stop him, using their knowledge of folklore and supernatural powers to try and defeat the vampire.
 
-Throughout the story, themes of love, sacrifice, and the struggle between good and evil are explored, as well as the power of friendship and determination in the face of overwhelming odds.
+Throughout the story, there are multiple plot threads that come together. Harker's experiences in Transylvania serve as a warning about the dangers of Dracula, while Mina's situation serves as a catalyst for the group's efforts to stop the vampire.
+
+Ultimately, it is revealed that Lucy has become a vampire herself, and that she has bitten other people, spreading the curse further. The men are able to destroy her, but not before she has turned several others into vampires.
+
+The story concludes with Dracula being defeated by a combination of forces: Quincey Morris's bravery, Van Helsing's knowledge, and Seward's determination. In the end, Mina is revealed to be Jonathan's true love, and they are reunited.
 
 
 ---
 Strategy: kmeans, Split Method: sentences
 Summary:
-Here is a consolidated plot summary of the context:
+Here is a consolidated plot summary of the provided context:
 
-The story begins with Jonathan Harker, a young solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. While there, he becomes trapped in the castle and discovers that he is a prisoner. He manages to escape with the help of a servant named Renfield.
+The story begins with Jonathan Harker, who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he has fallen into the Count's trap, and Dracula escapes from his castle.
 
-Unbeknownst to Harker, his experiences in the castle have caused him significant physical and emotional distress, leading to his death in England.
+Meanwhile, in London, Harker's fiancée Mina, her friend Lucy, and their companions Lord Godalming, Mr. Morris, and Quincey Morris are trying to uncover the mystery of Dracula's identity and his connection to a recent series of events involving death and transformation in London.
 
-Back in England, Harker's fiancée, Mina, begins to experience strange occurrences, including visions and auditory hallucinations. She becomes increasingly ill and is eventually admitted to an insane asylum.
+Through a séance, Mina is transported to a ship where she finds herself in a dark, strange place, hearing sounds that seem to be coming from outside. When she returns to her bed, she tells her companions about what she heard, including the sound of men running on the deck and a chain being dropped into the sea.
 
-It is revealed that Mina has become the target of Dracula's attentions, and she has begun to see and hear things that are not there - she believes that she can hear the lapping of water and see a ship at sea, even though she is in her bed. She eventually awakens from a trance-like state, unaware of what she experienced.
+The group realizes that this must be connected to Count Dracula's escape and decides to follow him across the water. They gather clues, including a ship that is likely to be carrying Dracula, and plan their next move.
 
-As Mina recovers, it becomes clear that Dracula's powers have caused her to become possessed by his spirit. The group of men who are concerned for her well-being, including Dr. Van Helsing, Lord Godalming, Mr. Morris, and Quincey Morris (Jonathan's friend), realize that they must find a way to stop Dracula and save Mina.
+At the start of the new day, Van Helsing, who has been studying the situation, reveals his plan to his companions. He believes that they should not actively pursue Count Dracula but instead wait for him to come to them, as he will likely try to escape from a ship into the waters around London.
 
-The group discovers that Dracula is attempting to escape from England by taking his coffin on board a ship in the port of London. They devise a plan to follow him and prevent him from escaping, and they begin to track his movements around the city.
-
-Ultimately, the group is able to find Dracula's ship and follow it to its destination, but the story ends with no further details about what happens next.
+The group decides to rest and prepare themselves for the next stage of their investigation, with Van Helsing assuring Mina's father and other concerned relatives that they are doing everything in their power to protect his daughter.
 
 
 ---
 Strategy: kmeans, Split Method: paragraphs
 Summary:
-Here is a consolidated plot summary of the context:
+Here is a consolidated plot summary of the text:
 
-**Plot Summary**
+The story begins with Jonathan Harker, a young solicitor who travels to Transylvania to finalize the sale of a property to Count Dracula. Upon his arrival, he discovers that the Count is a vampire and barely escapes with his life.
 
-The story begins with Jonathan Harker, who travels to Transylvania to finalize the sale of a property to Count Dracula. Unbeknownst to Harker, he has been invited to the castle as a guest, not just a business acquaintance.
+Cut to the present day, where a series of events unfolds involving three main characters: Abraham Van Helsing, a doctor who specializes in supernatural cases; John Seward, an asylum director at Arkham Sanitarium; and Jonathan Harker, who has returned from Transylvania with a severe injury.
 
-Upon his arrival at the castle, Harker discovers that he is a prisoner and that Count Dracula is a vampire. He manages to escape from the castle with the help of a local villager named Quincey Morris.
+Van Helsing reveals that he believes Lucy Westenra, a friend of Harker's, has become a vampire after being bitten by Dracula. He tells Harker that the "proof" for this will be shown in a hospital, where Lucy is being cared for. Van Helsing plans to visit Lucy with Seward and prove the truth about her condition.
 
-The story then shifts to London, where Harker's friend, Abraham Van Helsing, a professor of folklore and mythology, learns about Harker's encounter with Dracula. Van Helsing informs Harker that he is being drawn into a supernatural struggle against vampires.
+The story then jumps forward to the present day, where it is revealed that the original events took place in 1890-1891. Jonathan Harker, John Seward, Abraham Van Helsing, and Mina Murray (a friend of Lucy's) had formed a team to track down and defeat Dracula.
 
-Harker joins forces with Van Helsing, as well as his friends John Seward and Quincey Morris, to help Harker defeat Dracula. Along the way, they discover that Dracula has created a series of vampire minions, including Lucy Westenra, who is transformed into a vampire after being bitten by Dracula.
+Throughout the story, it is hinted that Dracula has returned from Transylvania and is once again terrorizing the world. The final chapter reveals that the original characters have gone on to lead happy lives: Godalming and Seward are married, and Mina's son will one day understand his mother's bravery and devotion.
 
-As the story unfolds, it becomes clear that Dracula's powers are growing stronger, and that he will stop at nothing to spread his evil influence. The group ultimately decides to destroy Dracula's powers and prevent him from turning anyone else into a vampire.
-
-In the final chapters of the book, the protagonists travel to Transylvania to confront Dracula once again. This time, they are joined by Mina Harker, Jonathan's fiancée, who has been drawn into the supernatural struggle against vampires.
-
-The story culminates in a dramatic showdown between the heroes and Dracula, resulting in the vampire's ultimate defeat and destruction.
-
+However, the story concludes with a sense of foreboding, as it is suggested that Dracula may still be alive and waiting for revenge. The final sentence reads: "We want no proofs; we ask none to believe us! This boy will some day know what a brave and gallant woman his mother is."
 """
