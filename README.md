@@ -19,7 +19,7 @@ This tool leverages the power of natural language processing (NLP) and machine l
 - Cluster the embeddings to identify groups of similar chunks.
 - Select representative chunks from each cluster.
 
-From each cluster, the chunk whose embedding is closest to the centroid (the central point) of that cluster is selected. This chunk is considered the most representative of its cluster. So, if you have N clusters, you will end up with N representative chunks.
+From each cluster, the chunk whose embedding is closest to the centroid (the central point) of that cluster is selected (or more chunks if chunks_per_cluster > 1). This chunk is considered the most representative of its cluster. So, if you have N clusters, you will end up with N representative chunks.
 
 ## Key Features
 
@@ -84,7 +84,7 @@ The `CriticalVectors` class is initialized with several parameters:
 - **chunks_per_cluster** (int): The number of chunks to select from each cluster. This parameter controls the diversity and number of chunks selected.
 - **embeddings_model**: The embeddings model to use for generating vector representations of text chunks. Defaults to `OllamaEmbeddings` with the `'nomic-embed-text'` model.
 - **split_method** (`str`): The method to split text into chunks. Options are `'sentences'` or `'paragraphs'`.
-- **max_tokens_per_chunk** (`int`): The maximum number of tokens allowed per chunk when splitting the text.
+- **max_tokens_per_chunk** (`int`): This parameter sets the maximum number of words, or tokens, that each chunk of text can contain. For instance, if it's set to 100, each chunk will contain up to 100 words. This is particularly important when working with models that have a limit on the number of words they can process at once.
 - **use_faiss** (`bool`): Whether to use FAISS for efficient clustering. Set to `True` to enable FAISS.
 
 ## Strategies
@@ -125,6 +125,7 @@ KMeans clustering partitions the data into a predefined number of clusters. Each
 selector = CriticalVectors(
     strategy='kmeans',
     num_clusters=10,
+    chunks_per_cluster=1,
     chunk_size=1000,
     split_method='sentences',
     max_tokens_per_chunk=100,
@@ -150,6 +151,7 @@ Agglomerative Clustering is a hierarchical clustering method that builds nested 
 selector = CriticalVectors(
     strategy='agglomerative',
     num_clusters=8,
+    chunks_per_cluster=1,
     chunk_size=1000,
     split_method='paragraphs',
     max_tokens_per_chunk=150,
@@ -341,14 +343,6 @@ This is not necessarily a limitation, but rather a consideration to keep in mind
 
 ## Appendix: Understanding Key Parameters
 
-1. **`max_tokens_per_chunk`**: This parameter sets the maximum number of words, or tokens, that each chunk of text can contain. For instance, if it's set to 100, each chunk will contain up to 100 words. This is particularly important when working with models that have a limit on the number of words they can process at once.
-
-2. **`num_clusters`**: This parameter determines the number of groups, or clusters, into which the chunks of text will be divided during the clustering step. If it's set to 'auto', the number of clusters is calculated automatically based on the number of chunks. The more clusters there are, the more representative chunks will be selected, providing a broader overview of the text.
-
-3. **`chunk_size`**: This parameter sets the maximum size of each chunk in characters when the text is split into paragraphs. For example, if it's set to 1000, each chunk will contain up to 1000 characters. This is useful when you want to control the size of the chunks based on character count rather than word count.
-
-4. **`split_method`**: This parameter determines how the text is divided into chunks. If it's set to 'sentences', the text is split into sentences and then chunks are formed based on `max_tokens_per_chunk`. If it's set to 'paragraphs', the text is split into paragraphs and then chunks are formed based on `chunk_size`.
-
 ### How New Chunks Are Created
 
 Depending on the `split_method` chosen, the process of creating new chunks varies:
@@ -412,6 +406,7 @@ split_method='sentences'  # or 'paragraphs'
 ```python
 selector = CriticalVectors(
     strategy='kmeans',
+    chunks_per_cluster=1,
     num_clusters='auto',       # Automatically determine the number of clusters
     chunk_size=1000,           # Maximum size of chunks in characters when using paragraphs
     split_method='sentences',  # Split the text by sentences
@@ -425,95 +420,6 @@ selector = CriticalVectors(
 - When `split_method` is `'sentences'`, the `max_tokens_per_chunk` parameter is used to control chunk sizes.
 - When `split_method` is `'paragraphs'`, the `chunk_size` parameter is used instead.
 - The `num_clusters` parameter affects how many chunks will be selected as the most relevant.
-
----
-
-## **CriticalVectors Workflow**
-
-### **1. Initialization**
-
-- **CriticalVectors Instance Creation**
-  - **Parameters Set**:
-    - `chunk_size`
-    - `strategy` (`'kmeans'` or `'agglomerative'`)
-    - `num_clusters` (integer or `'auto'`)
-    - `embeddings_model` (default is `OllamaEmbeddings`)
-    - `split_method` (`'sentences'` or `'paragraphs'`)
-    - `max_tokens_per_chunk`
-    - `use_faiss` (boolean)
-  - **Purpose**: Configures the settings for how text will be processed.
-
----
-
-### **2. Text Acquisition**
-
-- **Download Raw Content**
-  - **Function**: `download_raw_content(url)`
-  - **Process**:
-    - Fetches text data from the specified URL.
-    - Handles exceptions and errors (e.g., HTTP errors).
-  - **Outcome**: Raw text data ready for processing.
-
----
-
-### **3. Text Splitting**
-
-- **Split Text into Chunks**
-  - **Method**: `split_text(text, method, max_tokens_per_chunk)`
-  - **Options**:
-    - **Sentences**:
-      - Uses NLTK's sentence tokenizer.
-      - Groups sentences into chunks without exceeding `max_tokens_per_chunk`.
-    - **Paragraphs**:
-      - Splits text based on double newline characters (`'\n\n'`).
-  - **Process Flow**:
-    1. **Tokenization**: Break text into smaller units (sentences or paragraphs).
-    2. **Chunking**: Aggregate tokens into chunks based on size constraints.
-  - **Outcome**: A list of text chunks for further processing.
-
----
-
-### **4. Embedding Computation**
-
-- **Compute Embeddings for Chunks**
-  - **Method**: `compute_embeddings(chunks)`
-  - **Process**:
-    - Converts text chunks into numerical vectors (embeddings).
-    - Uses the specified embeddings model (default: `OllamaEmbeddings` with `'nomic-embed-text'`).
-    - Ensures embeddings are in `float32` format (required for FAISS).
-  - **Outcome**: An array of embeddings representing each chunk in vector space.
-
----
-
-### **5. Chunk Selection via Clustering**
-
-- **Select Relevant Chunks**
-  - **Method**: `select_chunks(chunks, embeddings)`
-  - **Strategies**:
-    - **KMeans Clustering** (`_select_chunks_kmeans`)
-      - Clusters embeddings into `num_clusters`.
-      - Uses FAISS or Scikit-learn's KMeans.
-      - Selects the chunk closest to each cluster centroid.
-    - **Agglomerative Clustering** (`_select_chunks_agglomerative`)
-      - Performs hierarchical clustering to group similar chunks.
-      - Computes centroids and selects closest chunks.
-  - **Automatic Cluster Determination**:
-    - If `num_clusters` is `'auto'`, calculates it based on the number of chunks.
-  - **Outcome**: A list of the most relevant chunks extracted from the text.
-
----
-
-### **6. Output Generation**
-
-- **Retrieve Relevant Chunks**
-  - **Method**: `get_relevant_chunks(text)`
-  - **Process**:
-    - Calls `split_text`, `compute_embeddings`, and `select_chunks` in sequence.
-    - Also extracts the first and last parts of the text.
-  - **Outputs**:
-    - `selected_chunks`: The most relevant chunks identified.
-    - `first_part`: The initial chunk of the text.
-    - `last_part`: The final chunk of the text.
 
 ---
 
